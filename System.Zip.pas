@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2012 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2013 Embarcadero Technologies, Inc. }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
 {                                                       }
@@ -170,18 +170,18 @@ type
 
     /// <param name="ZipFileName">Path to Zip File</param>
     /// <returns>Is the .ZIP file valid</returns>
-    class function IsValid(ZipFileName: string): Boolean; static;
+    class function IsValid(const ZipFileName: string): Boolean; static;
 
     /// <summary> Extract a ZipFile</summary>
     /// <param name="ZipFileName">File name of the ZIP file</param>
     /// <param name="Path">Path to extract to disk</param>
-    class procedure ExtractZipFile(ZipFileName: string; Path: string); static;
+    class procedure ExtractZipFile(const ZipFileName: string; const Path: string); static;
 
     /// <summary> Zip the contents of a directory </summary>
     /// <param name="ZipFileName">File name of the ZIP file</param>
     /// <param name="Path">Path of directory to zip</param>
     /// <param name="Compression">Compression mode.</param>
-    class procedure ZipDirectoryContents(ZipFileName: string; Path: string;
+    class procedure ZipDirectoryContents(const ZipFileName: string; const Path: string;
       Compression: TZipCompression = zcDeflate); static;
 
     /// <summary> Create a TZipFile</summary>
@@ -198,7 +198,7 @@ type
     ///      additional new files.
     ///   <c>zmRead</c> Opens the file for reading.
     ///</param>
-    procedure Open(ZipFileName: string; OpenMode: TZipMode); overload;
+    procedure Open(const ZipFileName: string; OpenMode: TZipMode); overload;
     procedure Open(ZipFileStream: TStream; OpenMode: TZipMode); overload;
 
     /// <remarks>
@@ -218,11 +218,11 @@ type
     /// <param name="FileName">File name in the archive</param>
     /// <param name="Path">Path to extract to disk</param>
     /// <param name="CreateSubdirs">The output should create sub directories specified in the ZIP file</param>
-    procedure Extract(FileName: string; Path: string = ''; CreateSubdirs: Boolean=True); overload;
-    procedure Extract(Index: Integer; Path: string = ''; CreateSubdirs: Boolean=True); overload;
+    procedure Extract(const FileName: string; const Path: string = ''; CreateSubdirs: Boolean = True); overload;
+    procedure Extract(Index: Integer; const Path: string = ''; CreateSubdirs: Boolean = True); overload;
     /// <summary> Extract All files </summary>
     /// <param name="Path">Path to extract to.</param>
-    procedure ExtractAll(Path: string = '');
+    procedure ExtractAll(const Path: string = '');
 
     /// <summary> Read a file from arcive to an array of Bytes </summary>
     /// <remarks>
@@ -232,7 +232,7 @@ type
     /// <param name="FileName">ZIP file FileName</param>
     /// <param name="Bytes">Output bytes</param>
     ///
-    procedure Read(FileName: string; out Bytes: TBytes); overload;
+    procedure Read(const FileName: string; out Bytes: TBytes); overload;
     procedure Read(Index: Integer; out Bytes: TBytes); overload;
     /// <summary> Get a stream to read a file from disk </summary>
     /// <remarks>
@@ -246,7 +246,7 @@ type
     /// <param name="FileName">ZIP file FileName</param>
     /// <param name="Stream">Output Stream</param>
     /// <param name="LocalHeader">Local File header</param>
-    procedure Read(FileName: string; out Stream: TStream; out LocalHeader: TZipHeader); overload;
+    procedure Read(const FileName: string; out Stream: TStream; out LocalHeader: TZipHeader); overload;
     procedure Read(Index: Integer; out Stream: TStream; out LocalHeader: TZipHeader); overload;
 
     /// <summary> Add a file to the ZIP file </summary>
@@ -254,21 +254,19 @@ type
     /// <param name="ArchiveFileName">Path + Name of file in the arcive.
     ///   If Ommitted, <C>ExtractFileName(FileName)</C> will be used.</param>
     /// <param name="Compression">Compression mode.</param>
-    procedure Add(FileName: string; ArchiveFileName: string = '';
+    procedure Add(const FileName: string; const ArchiveFileName: string = '';
       Compression: TZipCompression = zcDeflate); overload;
     /// <summary> Add a memory file to the ZIP file </summary>
     /// <param name="Data">Bytes to be added</param>
     /// <param name="ArchiveFileName">Path + Name of file in the arcive.</param>
     /// <param name="Compression">Compression mode.</param>
     ///
-    procedure Add(Data: TBytes; ArchiveFileName: string;
-      Compression: TZipCompression = zcDeflate); overload;
+    procedure Add(Data: TBytes; const ArchiveFileName: string; Compression: TZipCompression = zcDeflate); overload;
     /// <summary> Add a memory file to the ZIP file </summary>
     /// <param name="Data">Stream of file to be added</param>
     /// <param name="ArchiveFileName">Path + Name of file in the arcive.</param>
     /// <param name="Compression">Compression mode.</param>
-    procedure Add(Data: TStream; ArchiveFileName: string;
-      Compression: TZipCompression = zcDeflate); overload;
+    procedure Add(Data: TStream; const ArchiveFileName: string; Compression: TZipCompression = zcDeflate); overload;
     /// <summary> Add a memory file to the ZIP file. Allows programmer to specify
     ///  the Local and Central Header data for more flexibility on what gets written.
     ///  Minimal vailidation is done on the Header parameters; speficying bad options
@@ -277,8 +275,7 @@ type
     /// <param name="LocalHeader">The local header data</param>
     /// <param name="CentralHeader">A Pointer to an optional central header. If no
     /// central Header is provided, the Local Header information is used. </param>
-    procedure Add(Data: TStream; LocalHeader: TZipHeader;
-      CentralHeader: PZipHeader = nil); overload;
+    procedure Add(Data: TStream; LocalHeader: TZipHeader; CentralHeader: PZipHeader = nil); overload;
                                                          
                                                        
 
@@ -291,7 +288,7 @@ type
     /// <param name="FileName">Path + Name of file in the arcive.</param>
     /// <returns>The index of the file in the archive, or -1 on failure.
     /// </returns>
-    function IndexOf(FileName: string): Integer;
+    function IndexOf(const FileName: string): Integer;
 
     /// <returns> The mode the TZipFile is opened to</returns>
     property Mode: TZipMode read FMode;
@@ -675,14 +672,14 @@ begin
     TPair<TStreamConstructor, TStreamConstructor>.Create(CompressStream, DecompressStream));
 end;
 
-class function TZipFile.IsValid(ZipFileName: string): Boolean;
+class function TZipFile.IsValid(const ZipFileName: string): Boolean;
 var
   Z: TZipFile;
   Header: TZipEndOfCentralHeader;
 begin
   Result := False;
   try
-    Z := tzipfile.Create;
+    Z := TZipFile.Create;
     try
       Z.FStream := TFileStream.Create(ZipFileName, fmOpenRead);
       try
@@ -693,8 +690,8 @@ begin
     finally
       Z.Free;
     end;
-  except on E: Exception do
-    // Swallow exceptions and return False
+  except on E: EStreamError do
+    // Swallow only Stream exceptions and return False
   end;
 end;
 
@@ -746,7 +743,7 @@ begin
   Result := False;
 end;
 
-class procedure TZipFile.ExtractZipFile(ZipFileName: string; Path: string);
+class procedure TZipFile.ExtractZipFile(const ZipFileName: string; const Path: string);
 var
   LZip: TZipFile;
 begin
@@ -760,27 +757,25 @@ begin
   end;
 end;
 
-class procedure TZipFile.ZipDirectoryContents(ZipFileName: string; Path: string;
+class procedure TZipFile.ZipDirectoryContents(const ZipFileName: string; const Path: string;
   Compression: TZipCompression);
 var
   LZipFile: TZipFile;
   LFile: string;
   LZFile: string;
+  LPath: string;
 begin
   LZipFile := TZipFile.Create;
   try
     LZipFile.Open(ZipFileName, zmWrite);
-    // Ensure path ends with PathDelim so when we strip it we have a valid relative path
-    if Path[Length(Path)] <> PathDelim then
-      Path := Path + PathDelim;
+    LPath := System.SysUtils.IncludeTrailingPathDelimiter(Path);
     for LFile in TDirectory.GetFiles(Path, '*', TSearchOption.soAllDirectories) do
     begin
       // Strip off root path
 {$IFDEF MSWINDOWS}
-      LZFile := StringReplace(
-      Copy(LFile, Length(Path)+1, Length(LFile)), '\', '/', [rfReplaceAll]);
+      LZFile := StringReplace(Copy(LFile, Length(LPath) + 1, Length(LFile)), '\', '/', [rfReplaceAll]);
 {$ELSE}
-      LZFile := Copy(LFile, Length(Path)+1, Length(LFile));
+      LZFile := Copy(LFile, Length(LPath) + 1, Length(LFile));
 {$ENDIF MSWINDOWS}
       LZipFile.Add(LFile, LZFile, Compression);
     end;
@@ -805,7 +800,7 @@ begin
   inherited;
 end;
 
-procedure TZipFile.Open(ZipFileName: string; OpenMode: TZipMode);
+procedure TZipFile.Open(const ZipFileName: string; OpenMode: TZipMode);
 var
   LMode: LongInt;
   LFileStream: TFileStream;
@@ -926,12 +921,12 @@ begin
   end;
 end;
 
-procedure TZipFile.Extract(FileName: string; Path: string; CreateSubDirs: Boolean);
+procedure TZipFile.Extract(const FileName: string; const Path: string; CreateSubDirs: Boolean);
 begin
   Extract(IndexOf(FileName), Path, CreateSubdirs);
 end;
 
-procedure TZipFile.Extract(Index: Integer; Path: string; CreateSubdirs: Boolean);
+procedure TZipFile.Extract(Index: Integer; const Path: string; CreateSubdirs: Boolean);
 var
   LInStream, LOutStream: TStream;
   LHeader: TZipHeader;
@@ -977,7 +972,7 @@ begin
   end;
 end;
 
-procedure TZipFile.ExtractAll(Path: string);
+procedure TZipFile.ExtractAll(const Path: string);
 var
   I: Integer;
 begin
@@ -987,7 +982,7 @@ begin
     Extract(I, Path);
 end;
 
-procedure TZipFile.Read(FileName: string; out Bytes: TBytes);
+procedure TZipFile.Read(const FileName: string; out Bytes: TBytes);
 begin
   Read(IndexOf(FileName), Bytes);
 end;
@@ -1028,7 +1023,7 @@ begin
 end;
 //{$ENDIF}
 
-procedure TZipFile.Read(FileName: string; out Stream: TStream; out LocalHeader: TZipHeader);
+procedure TZipFile.Read(const FileName: string; out Stream: TStream; out LocalHeader: TZipHeader);
 begin
   Read(IndexOf(FileName), Stream, LocalHeader);
 end;
@@ -1169,11 +1164,12 @@ begin
   FFiles.Add(CentralHeader^);
 end;
 
-procedure TZipFile.Add(FileName: string; ArchiveFileName: string;
+procedure TZipFile.Add(const FileName: string; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
   LInStream: TStream;
   LHeader: TZipHeader;
+  LArchiveFileName: string;
 begin
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
@@ -1193,11 +1189,13 @@ begin
     LHeader.UncompressedSize := LInStream.Size;
     LHeader.InternalAttributes := 0;
     LHeader.ExternalAttributes := 0;                                               
-    if ArchiveFileName = '' then
-      ArchiveFileName := ExtractFileName(FileName);
+    if ArchiveFileName <> '' then
+	  LArchiveFileName := ArchiveFileName
+	else
+      LArchiveFileName := ExtractFileName(FileName);
     if FUTF8Support then
       LHeader.Flag := LHeader.Flag or (1 SHL 11); // Language encoding flag, UTF8
-    LHeader.FileName := StringToTBytes(ArchiveFileName);
+    LHeader.FileName := StringToTBytes(LArchiveFileName);
     LHeader.FileNameLength := Length(LHeader.FileName);
 
     LHeader.ExtraFieldLength := 0;
@@ -1207,7 +1205,7 @@ begin
   end;
 end;
 
-procedure TZipFile.Add(Data: TBytes; ArchiveFileName: string;
+procedure TZipFile.Add(Data: TBytes; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
   LInStream: TStream;
@@ -1227,7 +1225,7 @@ begin
   end;
 end;
 
-procedure TZipFile.Add(Data: TStream; ArchiveFileName: string;
+procedure TZipFile.Add(Data: TStream; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
   LHeader: TZipHeader;
@@ -1256,7 +1254,7 @@ begin
 end;
 
 
-function TZipFile.IndexOf(FileName: string): Integer;
+function TZipFile.IndexOf(const FileName: string): Integer;
 var
   I: Integer;
 begin
