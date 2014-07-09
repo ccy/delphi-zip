@@ -73,6 +73,7 @@ const
   ZIP_Version20 = 20;
 
   EXTRAFIELD_ID_ZIP64: UInt16 = $0001;
+  EXTRAFIELD_ID_NTFS: UInt16  = $000A;
 
   ZIP64 = $FFFFFFFF;
 
@@ -124,6 +125,7 @@ type
     procedure SetZIP64_CompressedSize(const Value: UInt64);
     function GetZIP64_UncompressedSize: UInt64;
     procedure SetZIP64_UncompressedSize(const Value: UInt64);
+    procedure SetExtraField_NTFS(const aFileName: string);
     property ZIP64_CompressedSize: UInt64 read GetZIP64_CompressedSize write
         SetZIP64_CompressedSize;
     property ZIP64_UncompressedSize: UInt64 read GetZIP64_UncompressedSize write
@@ -150,6 +152,22 @@ type
     class operator Implicit(const A: TZipExtraField_ZIP64): TBytes;
     class operator Implicit(const A: TZipExtraField): TZipExtraField_ZIP64;
   end;
+
+  {$ifdef MSWINDOWS}
+  TZipExtraField_NTFS = packed record
+    Reserved : UInt32;
+    Tag1     : UInt16; // 0x0001
+    Size1    : UInt16;
+    MTime    : UInt64;
+    ATime    : UInt64;
+    CTime    : UInt64;
+    constructor Create(const aFileName: string);
+    class operator Implicit(const aBytes: TBytes): TZipExtraField_NTFS;
+    class operator Implicit(const A: TZipExtraField_NTFS): TBytes;
+    class operator Implicit(const A: TZipExtraField_NTFS): TZipExtraField;
+    class operator Implicit(const A: TZipExtraField): TZipExtraField_NTFS;
+  end;
+  {$endif}
 
   TZipExtraFields = packed record
     Items: TArray<TZipExtraField>;
@@ -403,7 +421,9 @@ implementation
 uses
   System.RTLConsts,
   System.ZLib,
-  System.ZLib.Progress;
+  System.ZLib.Progress
+{$ifdef MSWINDOWS}, Winapi.Windows{$endif}
+  ;
 
 function TZipHeader.GetZIP64_CompressedSize: UInt64;
 var Z64: TZipExtraField_ZIP64;
@@ -436,6 +456,18 @@ end;
 function TZipHeader.IsZIP64: Boolean;
 begin
   Result := (ZIP64_CompressedSize > ZIP64) or (ZIP64_UncompressedSize > ZIP64);
+end;
+
+procedure TZipHeader.SetExtraField_NTFS(const aFileName: string);
+var Ex: TZipExtraFields;
+    NTFS: TZipExtraField_NTFS;
+begin
+  if not FileExists(aFileName) then Exit;
+
+  Ex := ExtraField;
+  NTFS := TZipExtraField_NTFS.Create(aFileName);
+  Ex.Add(NTFS);
+  ExtraField := Ex;
 end;
 
 procedure TZipHeader.SetZIP64_CompressedSize(const Value: UInt64);
@@ -569,6 +601,52 @@ begin
   else
     Result := nil;
 end;
+
+{$ifdef MSWINDOWS}
+constructor TZipExtraField_NTFS.Create(const aFileName: string);
+var F: TWin32FileAttributeData;
+begin
+  FillChar(Self, SizeOf(Self), 0);
+
+  Tag1 := $0001;
+
+  Size1 := SizeOf(MTime) + SizeOf(ATime) + SizeOf(CTime);
+  {$WARN SYMBOL_PLATFORM OFF}Win32Check(GetFileAttributesEx(PChar(aFileName), GetFileExInfoStandard, @F));{$WARN SYMBOL_PLATFORM ON}
+  Move(F.ftCreationTime, CTime, SizeOf(CTime));
+  Move(F.ftLastAccessTime, ATime, SizeOf(ATime));
+  Move(F.ftLastWriteTime, MTime, SizeOf(MTime));
+end;
+
+class operator TZipExtraField_NTFS.Implicit(const A: TZipExtraField_NTFS):
+    TBytes;
+begin
+  SetLength(Result, SizeOf(A));
+  Move(A, Result[0], SizeOf(A));
+end;
+
+class operator TZipExtraField_NTFS.Implicit(
+  const A: TZipExtraField_NTFS): TZipExtraField;
+begin
+  Result := TZipExtraField.Create(EXTRAFIELD_ID_NTFS, A);
+end;
+
+class operator TZipExtraField_NTFS.Implicit(
+  const A: TZipExtraField): TZipExtraField_NTFS;
+begin
+  if A.DataSize > 0 then
+    Result := A.Data
+  else
+    Result := nil;
+end;
+
+class operator TZipExtraField_NTFS.Implicit(const aBytes: TBytes):
+    TZipExtraField_NTFS;
+begin
+  FillChar(Result, SizeOf(Result), 0);
+  if Length(aBytes) > 0 then
+    Move(aBytes[0], Result, Length(aBytes));
+end;
+{$endif}
 
 class operator TZipExtraFields.Implicit(
   const A: TZipExtraFields): TBytes;
@@ -1322,6 +1400,10 @@ var
   LInStream, LOutStream: TStream;
   LHeader: TZipHeader;
   LDir, LFileName: string;
+  Ex: TZipExtraFields;
+  NTFS: TZipExtraField_NTFS;
+  i: NativeInt;
+  F: TZipExtraField;
 begin
   // Get decompression stream for file
   Read(Index, LInStream, LHeader);
@@ -1356,6 +1438,15 @@ begin
         LOutStream.CopyFrom(LInStream, FFiles[Index].ZIP64_UncompressedSize);
       end;
     finally
+      if (LOutStream as TFileStream).Handle <> INVALID_HANDLE_VALUE then begin
+        if FFiles[Index].ExtraFieldLength > 0 then begin
+          Ex := FFiles[Index].ExtraField;
+          if Ex.Get(EXTRAFIELD_ID_NTFS, F, i) then begin
+            NTFS := F;
+            SetFileTime((LOutStream as TFileStream).Handle, @NTFS.CTime, @NTFS.ATime, @NTFS.MTime);
+          end;
+        end;
+      end;
       LOutStream.Free;
     end;
   finally
@@ -1594,6 +1685,7 @@ begin
       LHeader.Flag := LHeader.Flag or (1 SHL 11); // Language encoding flag, UTF8
     LHeader.FileName := StringToTBytes(LArchiveFileName);
     LHeader.FileNameLength := Length(LHeader.FileName);
+    LHeader.SetExtraField_NTFS(FileName);
 
 //    LHeader.ExtraFieldLength := 0;
     Add(LInStream, LHeader);
