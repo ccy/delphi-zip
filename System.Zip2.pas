@@ -64,9 +64,17 @@ const
   SIGNATURE_ZIPENDOFHEADER: UInt32 = $06054B50;
   SIGNATURE_CENTRALHEADER:  UInt32 = $02014B50;
   SIGNATURE_LOCALHEADER:    UInt32 = $04034B50;
+  SIGNATURE_ZIP64_ENDOFCENTRALDIRECTORY: UInt32 = $06064B50;
+  SIGNATURE_ZIP64_ENDOFCENTRALDIRECTORYLOCATOR: UInt32 = $07064B50;
 
   LOCALHEADERSIZE = 26;
   CENTRALHEADERSIZE = 42;
+
+  ZIP_Version20 = 20;
+
+  EXTRAFIELD_ID_ZIP64: UInt16 = $0001;
+
+  ZIP64 = $FFFFFFFF;
 
 type
   /// <summary> Final block written to zip file</summary>
@@ -111,9 +119,72 @@ type
     FileName: TBytes;
     ExtraField: TBytes;
     FileComment: TBytes;
+    function IsZIP64: Boolean;
+    function GetZIP64_CompressedSize: UInt64;
+    procedure SetZIP64_CompressedSize(const Value: UInt64);
+    function GetZIP64_UncompressedSize: UInt64;
+    procedure SetZIP64_UncompressedSize(const Value: UInt64);
+    property ZIP64_CompressedSize: UInt64 read GetZIP64_CompressedSize write
+        SetZIP64_CompressedSize;
+    property ZIP64_UncompressedSize: UInt64 read GetZIP64_UncompressedSize write
+        SetZIP64_UncompressedSize;
   end;
 
   PZipHeader = ^TZipHeader;
+
+  TZipExtraField = packed record
+    HeaderID: UInt16;
+    DataSize: UInt16;
+    Data: TBytes;
+    constructor Create(const aRawData: TBytes); overload;
+    constructor Create(const aHeaderID: UInt16; const aData: TBytes); overload;
+    procedure SetData(const A: TBytes);
+    class operator Implicit(const A: TZipExtraField): TBytes;
+  end;
+
+  TZipExtraField_ZIP64 = packed record
+    UncompressedSize : UInt64;
+    CompressedSize   : UInt64;
+    class operator Implicit(const aBytes: TBytes): TZipExtraField_ZIP64;
+    class operator Implicit(const A: TZipExtraField_ZIP64): TZipExtraField;
+    class operator Implicit(const A: TZipExtraField_ZIP64): TBytes;
+    class operator Implicit(const A: TZipExtraField): TZipExtraField_ZIP64;
+  end;
+
+  TZipExtraFields = packed record
+    Items: TArray<TZipExtraField>;
+    function Get(const aHeaderID: UInt16; out aItem: TZipExtraField; out Index:
+        NativeInt): Boolean;
+    function New: NativeInt; overload;
+    procedure Add(const A: TZipExtraField);
+    class operator Implicit(const aBytes: TBytes): TZipExtraFields;
+    class operator Implicit(const A: TZipExtraFields): TBytes;
+    class operator Implicit(const A: TZipExtraFields): TZipExtraField_ZIP64;
+  end;
+
+  TZip64_EndOfCentralDirectory = packed record
+    Signature               : UInt32; // $06064b50
+    RecordSize              : UInt64;
+    VersionMadeBy           : UInt16;
+    VersionNeededToExtract  : UInt16;
+    DiskNumber              : UInt32;
+    StartDiskNumber         : UInt32;
+    EntriesOnDisk           : UInt64;
+    TotalEntries            : UInt64;
+    DirectorySize           : UInt64;
+    DirectoryOffset         : UInt64;
+    class operator Implicit(const A: TZip64_EndOfCentralDirectory): TBytes;
+    procedure Init;
+  end;
+
+  TZip64_EndOfCentralDirectoryLocator = packed record
+    Signature               : UInt32; // $07064b50
+    StartDiskNumber         : UInt32;
+    RelativeOffset          : UInt64;
+    TotalDisks              : UInt32;
+    class operator Implicit(const A: TZip64_EndOfCentralDirectoryLocator): TBytes;
+    procedure Init;
+  end;
 
   /// <summary> Exception type for all Zip errors. </summary>
   EZipException = class( Exception );
@@ -160,6 +231,7 @@ type
     procedure SetComment(Value: string);
     procedure SetUTF8Support(const Value: Boolean);
     function LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
+    function ZIP64_LocateEndOfCentralHeader(var Header: TZip64_EndOfCentralDirectory): Boolean;
   public
     class constructor Create;
     class destructor Destroy;
@@ -332,6 +404,243 @@ uses
   System.RTLConsts,
   System.ZLib,
   System.ZLib.Progress;
+
+function TZipHeader.GetZIP64_CompressedSize: UInt64;
+var Z64: TZipExtraField_ZIP64;
+    Ex: TZipExtraFields;
+begin
+  Result := 0;
+  if Length(ExtraField) > 0 then begin
+    Ex := ExtraField;
+    Z64 := Ex;
+    Result := Z64.CompressedSize;
+  end;
+  if Result = 0 then
+    Result := CompressedSize;
+end;
+
+function TZipHeader.GetZIP64_UncompressedSize: UInt64;
+var Z64: TZipExtraField_ZIP64;
+    Ex: TZipExtraFields;
+begin
+  Result := 0;
+  if Length(ExtraField) > 0 then begin
+    Ex := ExtraField;
+    Z64 := Ex;
+    Result := Z64.UncompressedSize;
+  end;
+  if Result = 0 then
+    Result := UncompressedSize;
+end;
+
+function TZipHeader.IsZIP64: Boolean;
+begin
+  Result := (ZIP64_CompressedSize > ZIP64) or (ZIP64_UncompressedSize > ZIP64);
+end;
+
+procedure TZipHeader.SetZIP64_CompressedSize(const Value: UInt64);
+var Z64: TZipExtraField_ZIP64;
+    Ex: TZipExtraFields;
+begin
+  if Value > ZIP64 then begin
+    Ex := ExtraField;
+    Z64 := Ex;
+    Z64.CompressedSize := Value;
+    Ex.Add(Z64);
+    ExtraField := Ex;
+
+    CompressedSize := ZIP64;
+  end else
+    CompressedSize := Value;
+  ExtraFieldLength := Length(ExtraField);
+end;
+
+procedure TZipHeader.SetZIP64_UncompressedSize(const Value: UInt64);
+var Z64: TZipExtraField_ZIP64;
+    Ex: TZipExtraFields;
+begin
+  if Value > ZIP64 then begin
+    Ex := ExtraField;
+    Z64 := Ex;
+    Z64.UncompressedSize := Value;
+    Ex.Add(Z64);
+    ExtraField := Ex;
+
+    UncompressedSize := ZIP64;
+  end else
+    UncompressedSize := Value;
+  ExtraFieldLength := Length(ExtraField);
+end;
+
+class operator TZip64_EndOfCentralDirectory.Implicit(
+  const A: TZip64_EndOfCentralDirectory): TBytes;
+begin
+  SetLength(Result, SizeOf(A));
+  Move(A, Result[0], SizeOf(A));
+end;
+
+procedure TZip64_EndOfCentralDirectory.Init;
+begin
+  FillChar(Self, SizeOf(Self), 0);
+  Signature := SIGNATURE_ZIP64_ENDOFCENTRALDIRECTORY;
+  RecordSize := $2C;
+  VersionMadeBy := ZIP_Version20;
+  VersionNeededToExtract := ZIP_Version20;
+end;
+
+class operator TZip64_EndOfCentralDirectoryLocator.Implicit(
+  const A: TZip64_EndOfCentralDirectoryLocator): TBytes;
+begin
+  SetLength(Result, SizeOf(A));
+  Move(A, Result[0], SizeOf(A));
+end;
+
+procedure TZip64_EndOfCentralDirectoryLocator.Init;
+begin
+  FillChar(Self, SizeOf(Self), 0);
+  Signature := SIGNATURE_ZIP64_ENDOFCENTRALDIRECTORYLOCATOR;
+end;
+
+constructor TZipExtraField.Create(const aHeaderID: UInt16; const aData: TBytes);
+begin
+  HeaderID := aHeaderID;
+  SetData(aData);
+end;
+
+constructor TZipExtraField.Create(const aRawData: TBytes);
+var iHeadSize: Integer;
+begin
+  iHeadSize := SizeOf(HeaderID) + SizeOf(DataSize);
+
+  if Length(aRawData) < iHeadSize then
+    raise EZipException.Create('Invalid Zip ExtraField');
+
+  Move(aRawData[0], Self, iHeadSize);
+
+  SetLength(Data, Length(aRawData) - iHeadSize);
+  Move(aRawData[iHeadSize], Data[0], Length(Data));
+
+  if DataSize <> Length(Data) then
+    raise EZipException.Create('Invalid Zip ExtraField');
+end;
+
+class operator TZipExtraField.Implicit(const A: TZipExtraField): TBytes;
+var iHeaderID, iDataSize, iData: NativeUInt;
+begin
+  iData := Length(A.Data);
+  iHeaderID := SizeOf(A.HeaderID);
+  iDataSize := SizeOf(A.DataSize);
+
+  SetLength(Result, iHeaderID + iDataSize + iData);
+  Move(A.HeaderID, Result[0], iHeaderID);
+  Move(A.DataSize, Result[iHeaderID], iDataSize);
+  if iData > 0 then
+    Move(A.Data[0], Result[iHeaderID + iDataSize], iData);
+end;
+
+procedure TZipExtraField.SetData(const A: TBytes);
+begin
+  Data := Copy(A, 0, Length(A));
+  DataSize := Length(Data);
+end;
+
+class operator TZipExtraField_ZIP64.Implicit(const aBytes: TBytes): TZipExtraField_ZIP64;
+begin
+  FillChar(Result, SizeOf(Result), 0);
+  if Length(aBytes) > 0 then
+    Move(aBytes[0], Result, Length(aBytes));
+end;
+
+class operator TZipExtraField_ZIP64.Implicit(const A: TZipExtraField_ZIP64): TZipExtraField;
+begin
+  Result := TZipExtraField.Create(EXTRAFIELD_ID_ZIP64, A);
+end;
+
+class operator TZipExtraField_ZIP64.Implicit(const A: TZipExtraField_ZIP64): TBytes;
+begin
+  SetLength(Result, SizeOf(A));
+  Move(A, Result[0], SizeOf(A));
+end;
+
+class operator TZipExtraField_ZIP64.Implicit(const A: TZipExtraField): TZipExtraField_ZIP64;
+begin
+  if A.DataSize > 0 then
+    Result := A.Data
+  else
+    Result := nil;
+end;
+
+class operator TZipExtraFields.Implicit(
+  const A: TZipExtraFields): TBytes;
+var F: TZipExtraField;
+    B: TBytes;
+    i: Integer;
+begin
+  SetLength(Result, 0);
+  for F in A.Items do begin
+    B := F;
+    i := Length(Result);
+    SetLength(Result, i + Length(B));
+    Move(B[0], Result[i], Length(B));
+  end;
+end;
+
+class operator TZipExtraFields.Implicit(
+  const aBytes: TBytes): TZipExtraFields;
+var iOffSet: Integer;
+    pSize: ^UInt16;
+    B: TBytes;
+begin
+  iOffSet := 0;
+  SetLength(Result.Items, 0);
+  while iOffSet < Length(aBytes) do begin
+    pSize := @aBytes[iOffSet + 2];
+    B := Copy(aBytes, iOffSet, 2{HeaderID} + 2{DataSize} + pSize^);
+    Result.Items[Result.New] := TZipExtraField.Create(B);
+    Inc(iOffSet, Length(B));
+  end;
+end;
+
+procedure TZipExtraFields.Add(const A: TZipExtraField);
+var F: TZipExtraField;
+    i: NativeInt;
+begin
+  if not Get(A.HeaderID, F, i) then
+    i := New;
+  Items[i] := A;
+end;
+
+function TZipExtraFields.Get(const aHeaderID: UInt16; out aItem:
+    TZipExtraField; out Index: NativeInt): Boolean;
+var i: NativeInt;
+begin
+  Index := -1;
+  for i := 0 to Length(Items) - 1 do begin
+    if Items[i].HeaderID = aHeaderID then begin
+      aItem := Items[i];
+      Index := i;
+      Break;
+    end;
+  end;
+  Result := Index <> -1;
+end;
+
+class operator TZipExtraFields.Implicit(
+  const A: TZipExtraFields): TZipExtraField_ZIP64;
+var F: TZipExtraField;
+    i: NativeInt;
+begin
+  if not A.Get(EXTRAFIELD_ID_ZIP64, F, i) then
+    F := TZipExtraField.Create(EXTRAFIELD_ID_ZIP64, nil);
+  Result := F;
+end;
+
+function TZipExtraFields.New: NativeInt;
+begin
+  Result := Length(Items) + 1;
+  SetLength(Items, Result);
+  Dec(Result);
+end;
 
 procedure VerifyRead(Stream: TStream; Buffer: TBytes; Count: Integer); overload;
 begin
@@ -554,6 +863,7 @@ var
   Signature: UInt32;
   LEndHeader: TZipEndOfCentralHeader;
   LHeader: TZipHeader;
+  Z64: TZip64_EndOfCentralDirectory;
 begin
   FFiles.Clear;
   if FStream.Size = 0 then
@@ -563,6 +873,10 @@ begin
     raise EZipException.CreateRes(@SZipErrorRead);
   // Move to the beginning of the CentralDirectory
   FStream.Position := LEndHeader.CentralDirOffset;
+  if LEndHeader.CentralDirOffset = ZIP64 then begin
+    if ZIP64_LocateEndOfCentralHeader(Z64) then
+      FStream.Position := Z64.DirectoryOffset;
+  end;
   // Save Begginning of Central Directory. This is where new files
   // get written to, and where the new central directory gets written when
   // closing.
@@ -661,7 +975,7 @@ begin
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
       Result := TStoredStream.Create(InStream, ZipFile.OnCompress, ZipFile.OnDecompress);
-      (Result as TStoredStream).FZipFileSize := Item.UncompressedSize;
+      (Result as TStoredStream).FZipFileSize := Item.ZIP64_UncompressedSize;
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
@@ -776,6 +1090,31 @@ begin
   end;
 end;
 
+function TZipFile.ZIP64_LocateEndOfCentralHeader(
+  var Header: TZip64_EndOfCentralDirectory): Boolean;
+var B: TBytes;
+    i, iSize: Integer;
+begin
+  Result := False;
+
+  iSize := $FFFF;
+  if FStream.Size < iSize then
+    iSize := FStream.Size;
+  SetLength(B, iSize);
+
+  FStream.Seek(-iSize, soFromEnd);
+
+  i := FStream.Read(B, iSize) - 1 - SizeOf(Header);
+  while i >= 0 do begin
+    if PCardinal(@B[i])^ = SIGNATURE_ZIP64_ENDOFCENTRALDIRECTORY then begin
+      Move(B[i], Header, SizeOf(Header));
+      Result := True;
+      Break;
+    end;
+    Dec(i);
+  end;
+end;
+
 class procedure TZipFile.ZipDirectoryContents(const ZipFileName: string; const Path: string;
   Compression: TZipCompression);
 var
@@ -870,17 +1209,26 @@ var
   LEndOfHeader: TZipEndOfCentralHeader;
   I: Integer;
   Signature: UInt32;
+  iCentralDirSize: UInt32;
+  Z64_End: TZip64_EndOfCentralDirectory;
+  Z64_EndLocator: TZip64_EndOfCentralDirectoryLocator;
+  bIsZIP64: Boolean;
 begin
   try
     // Only need to write Central Directory and End Of Central Directory if writing
     if (FMode = zmReadWrite) or (FMode = zmWrite) then
     begin
+      bIsZIP64 := False;
       FStream.Position := FEndFileData;
       Signature := SIGNATURE_CENTRALHEADER;
       // Write File Signatures
       for I := 0 to FFiles.Count - 1 do
       begin
         LHeader := FFiles[I];
+
+        if not bIsZip64 then
+          bIsZip64 := LHeader.IsZIP64;
+
         VerifyWrite(FStream, Signature, SizeOf(Signature));
 //        VerifyWrite(FStream, LHeader.MadeByVersion,  CENTRALHEADERSIZE);
         VerifyWrite(FStream, LHeader.MadeByVersion,      Sizeof(UInt16));
@@ -906,12 +1254,36 @@ begin
         if LHeader.FileCommentLength <> 0 then
           VerifyWrite(FStream, LHeader.FileComment, LHeader.FileCommentLength);
       end;
+
+      if not bIsZip64 then
+        bIsZip64 := FStream.Position > ZIP64;
+
+      iCentralDirSize := FStream.Position - FEndFileData;
+
+      if bIsZip64 then begin
+        Z64_EndLocator.Init;
+        Z64_EndLocator.StartDiskNumber := 0;
+        Z64_EndLocator.RelativeOffset := FStream.Position;
+        Z64_EndLocator.TotalDisks := 1;
+
+        Z64_End.Init;
+        Z64_End.EntriesOnDisk := FFiles.Count;
+        Z64_End.TotalEntries := FFiles.Count;
+        Z64_End.DirectorySize := iCentralDirSize;
+        Z64_End.DirectoryOffset := FEndFileData;
+
+        VerifyWrite(FStream, Z64_End, SizeOf(Z64_End));
+        VerifyWrite(FStream, Z64_EndLocator, SizeOf(Z64_EndLocator));
+      end;
+
       // Only support writing single disk .ZIP files
       FillChar(LEndOfHeader, Sizeof(LEndOfHeader), 0);
       LEndOfHeader.CentralDirEntries := FFiles.Count;
       LEndOfHeader.NumEntriesThisDisk := FFiles.Count;
-      LEndOfHeader.CentralDirSize := FStream.Position - FEndFileData;
+      LEndOfHeader.CentralDirSize := iCentralDirSize;
       LEndOfHeader.CentralDirOffset := FEndFileData;
+      if FEndFileData > ZIP64 then
+        LEndOfHeader.CentralDirOffset := ZIP64;
       // Truncate comment if it's too long
       if Length(FComment) > $FFFF then
         SetLength(FComment, $FFFF);
@@ -976,12 +1348,12 @@ begin
       if (LHeader.Flag and (1 SHL 3)) = 0 then
       begin
         // Empty files should not be read
-        if FFiles[Index].UncompressedSize > 0 then
-          LOutStream.CopyFrom(LInStream, FFiles[Index].UncompressedSize);
+        if FFiles[Index].ZIP64_UncompressedSize > 0 then
+          LOutStream.CopyFrom(LInStream, FFiles[Index].ZIP64_UncompressedSize);
       end
       else
       begin
-        LOutStream.CopyFrom(LInStream, FFiles[Index].UncompressedSize);
+        LOutStream.CopyFrom(LInStream, FFiles[Index].ZIP64_UncompressedSize);
       end;
     finally
       LOutStream.Free;
@@ -1107,10 +1479,10 @@ begin
   FStream.Position := FEndFileData;
   LocalHeader.LocalHeaderOffset := FEndFileData;
   // Require at least version 2.0
-  if LocalHeader.MadeByVersion < 20 then
-    LocalHeader.MadeByVersion := 20;
-  if LocalHeader.RequiredVersion < 20 then
-    LocalHeader.RequiredVersion := 20;
+  if LocalHeader.MadeByVersion < ZIP_Version20 then
+    LocalHeader.MadeByVersion := ZIP_Version20;
+  if LocalHeader.RequiredVersion < ZIP_Version20 then
+    LocalHeader.RequiredVersion := ZIP_Version20;
 
   // Trust the length of the strings over the Length members
   LocalHeader.FileNameLength   := Length(LocalHeader.FileName);
@@ -1144,28 +1516,28 @@ begin
   // Save position to calcuate Compressed Size
   LStartPos := FStream.Position;
   DataStart := Data.Position;
-  LocalHeader.UncompressedSize := Data.Size - DataStart;
+  LocalHeader.ZIP64_UncompressedSize := Data.Size - DataStart;
   // Write Compressed data
   LCompressStream := FCompressionHandler[TZipCompression(LocalHeader.CompressionMethod)].Key(FStream, self, LocalHeader);
   try
     if TZipCompression(LocalHeader.CompressionMethod) in [zcDeflate] then
-      LCompressStream.Write(Data, LocalHeader.UncompressedSize)
+      LCompressStream.Write(Data, 0)
     else
-      LCompressStream.CopyFrom(Data, LocalHeader.UncompressedSize);
+      LCompressStream.CopyFrom(Data, LocalHeader.ZIP64_UncompressedSize);
   finally
     LCompressStream.Free;
   end;
 
   // Calcuate CompressedSize
-  LocalHeader.CompressedSize := FStream.Position - LStartPos;
+  LocalHeader.ZIP64_CompressedSize := FStream.Position - LStartPos;
   Data.Position := DataStart;
   SetLength(LBuffer, $4000);
   // Calcuate Uncompressed data's CRC
-  while Data.Position < LocalHeader.UncompressedSize do
+  while Data.Position < LocalHeader.ZIP64_UncompressedSize do
     LocalHeader.CRC32 := crc32(LocalHeader.CRC32, @LBuffer[0],
       Data.Read(LBuffer, Length(LBuffer)));
-  CentralHeader.UnCompressedSize := LocalHeader.UnCompressedSize;
-  CentralHeader.CompressedSize := LocalHeader.CompressedSize;
+  CentralHeader.ZIP64_UncompressedSize := LocalHeader.ZIP64_UncompressedSize;
+  CentralHeader.ZIP64_CompressedSize := LocalHeader.ZIP64_CompressedSize;
   CentralHeader.CRC32 := LocalHeader.CRC32;
   // Save new End of zipped data mark
   FEndFileData := FStream.Position;
@@ -1182,6 +1554,9 @@ begin
   FStream.Write(LocalHeader.UncompressedSize,   Sizeof(UInt32));
   FStream.Write(LocalHeader.FileNameLength,     Sizeof(UInt16));
   FStream.Write(LocalHeader.ExtraFieldLength,   Sizeof(UInt16));
+  FStream.Write(LocalHeader.FileName, LocalHeader.FileNameLength);
+  if LocalHeader.ExtraFieldLength > 0 then
+    FStream.Write(LocalHeader.ExtraField, LocalHeader.ExtraFieldLength);
 
   FFiles.Add(CentralHeader^);
 end;
@@ -1208,7 +1583,7 @@ begin
     LHeader.Flag := 0;
     LHeader.CompressionMethod := UInt16(Compression);
     LHeader.ModifiedDateTime := DateTimeToFileDate( tfile.GetLastWriteTime(FileName) );
-    LHeader.UncompressedSize := LInStream.Size;
+    LHeader.ZIP64_UncompressedSize := LInStream.Size;
     LHeader.InternalAttributes := 0;
     LHeader.ExternalAttributes := 0;                                               
     if ArchiveFileName <> '' then
@@ -1220,7 +1595,7 @@ begin
     LHeader.FileName := StringToTBytes(LArchiveFileName);
     LHeader.FileNameLength := Length(LHeader.FileName);
 
-    LHeader.ExtraFieldLength := 0;
+//    LHeader.ExtraFieldLength := 0;
     Add(LInStream, LHeader);
   finally
     LInStream.Free;
