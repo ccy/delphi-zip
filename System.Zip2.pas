@@ -261,6 +261,8 @@ type
     class procedure RegisterCompressionHandler(Compression: TZipCompression;
       CompressStream, DecompressStream: TStreamConstructor);
 
+    class procedure UnregisterCompressionHandler(Compression: TZipCompression);
+
     /// <param name="ZipFileName">Path to Zip File</param>
     /// <returns>Is the .ZIP file valid</returns>
     class function IsValid(const ZipFileName: string): Boolean; static;
@@ -865,6 +867,12 @@ begin
   finally
     E.Free;
   end;
+end;
+
+class procedure TZipFile.UnregisterCompressionHandler(
+  Compression: TZipCompression);
+begin
+  FCompressionHandler.Remove(Compression);
 end;
 
 function TZipFile.StringToTBytes(S: string): TBytes;
