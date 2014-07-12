@@ -1619,7 +1619,7 @@ begin
   // Write Compressed data
   LCompressStream := FCompressionHandler[TZipCompression(LocalHeader.CompressionMethod)].Key(FStream, self, LocalHeader);
   try
-    if TZipCompression(LocalHeader.CompressionMethod) in [zcDeflate] then
+    if TZipCompression(LocalHeader.CompressionMethod) in [zcDeflate, zcLZMA] then
       LCompressStream.Write(Data, 0)
     else
       LCompressStream.CopyFrom(Data, LocalHeader.ZIP64_UncompressedSize);
