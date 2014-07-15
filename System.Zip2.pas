@@ -1251,7 +1251,7 @@ var
 begin
   Close; // In case the user had a file open
   case OpenMode of
-    zmRead:      LMode := fmOpenRead;
+    zmRead:      LMode := fmOpenRead + fmShareDenyWrite;
     zmReadWrite: LMode := fmOpenReadWrite;
     zmWrite:     LMode := fmCreate;
     else
