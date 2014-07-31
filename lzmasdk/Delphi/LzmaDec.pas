@@ -58,20 +58,27 @@ type
     procedure Construct;
   end;
 
-function _LzmaDec_Allocate(var state: TCLzmaDec; const prop; propsSize:
-    Cardinal; var alloc: TISzAlloc): TSRes; cdecl; external;
+function LzmaDec_Allocate(var state: TCLzmaDec; const prop; propsSize:
+    Cardinal; var alloc: TISzAlloc): TSRes; cdecl; external name _PU +
+    'LzmaDec_Allocate';
 
-procedure _LzmaDec_Init(var p: TCLzmaDec); cdecl; external;
+procedure LzmaDec_Init(var p: TCLzmaDec); cdecl; external name _PU +
+    'LzmaDec_Init';
 
-procedure _LzmaDec_Free(var state: TCLzmaDec; var alloc: TISzAlloc); cdecl; external;
+procedure LzmaDec_Free(var state: TCLzmaDec; var alloc: TISzAlloc); cdecl;
+    external name _PU + 'LzmaDec_Free';
 
-function _LzmaDec_DecodeToBuf(var p: TCLzmaDec; var dest; var destLen: SIZE_T;
+function LzmaDec_DecodeToBuf(var p: TCLzmaDec; var dest; var destLen: SIZE_T;
     const src; var srcLen: SIZE_T; finishMode: ElzmaFinishMode; var status:
-    ELzmaStatus): TSRes; cdecl; external;
+    ELzmaStatus): TSRes; cdecl; external name _PU + 'LzmaDec_DecodeToBuf';
 
 implementation
 
-{$L Win32\LzmaDec.obj}
+{$ifdef Win32}
+  {$L Win32\LzmaDec.obj}
+{$else}
+  {$L Win64\LzmaDec.o}
+{$endif}
 
 procedure TCLzmaDec.Construct;
 begin

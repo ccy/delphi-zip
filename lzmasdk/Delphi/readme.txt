@@ -2,8 +2,10 @@ LZMA (Lempel–Ziv–Markov chain algorithm) compression algorithm was first used in
 
 For more information about the LZMA SDK. Visit: http://www.7-zip.org/sdk.html
 
-Compile Embarcadero RAD Studio with C++ Builder:
+Compile with Embarcadero RAD Studio C++ Builder Win32:
 
-  bcc32.exe -c -D_LZMA_PROB32 -D_WIN32 -v -y Threads.c LzFind.c LzFindMt.c LzmaDec.c LzmaEnc.c
+  bcc32.exe -c -q -D_LZMA_PROB32 -D_WIN32 Threads.c LzFind.c LzFindMt.c LzmaDec.c LzmaEnc.c
 
-Known problem: The Pascal version is not ready for Win64 platform yet.
+To compile Win64 platform, use XE6 and above:
+
+  bcc64.exe -c -q -D_LZMA_PROB32 -D_WIN64 Threads.c LzFind.c LzFindMt.c LzmaDec.c LzmaEnc.c

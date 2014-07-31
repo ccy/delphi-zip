@@ -5,6 +5,12 @@ interface
 uses Winapi.Windows;
 
 const
+{$IFDEF UNDERSCOREIMPORTNAME}
+  _PU = '_';
+{$ELSE}
+  _PU = '';
+{$ENDIF}
+
   SZ_OK                  = 0;
   SZ_ERROR_DATA          = 1;
   SZ_ERROR_MEM           = 2;

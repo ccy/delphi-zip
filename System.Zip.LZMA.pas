@@ -101,15 +101,15 @@ begin
   FStream.Write(Version, SizeOf(Version));
 
   R.Init;
-  FEncoderHandle := _LzmaEnc_Create(R);
+  FEncoderHandle := LzmaEnc_Create(R);
 
-  _LzmaEncProps_Init(Props);
+  LzmaEncProps_Init(Props);
 
-  CheckLzma(_LzmaEnc_SetProps(FEncoderHandle, Props));
+  CheckLzma(LzmaEnc_SetProps(FEncoderHandle, Props));
 
   PropDataLen := LZMA_PROPS_SIZE;
   SetLength(PropData, PropDataLen);
-  CheckLzma(_LzmaEnc_WriteProperties(FEncoderHandle, PropData, PropDataLen));
+  CheckLzma(LzmaEnc_WriteProperties(FEncoderHandle, PropData, PropDataLen));
   Assert(PropDataLen = LZMA_PROPS_SIZE);
 
   WPropDataLen := PropDataLen;
@@ -123,7 +123,7 @@ var R: TISzAlloc;
 begin
   inherited;
   R.Init;
-  _LzmaEnc_Destroy(FEncoderHandle, R, R);
+  LzmaEnc_Destroy(FEncoderHandle, R, R);
 end;
 
 constructor TLZMAEncoderStream.Create(const Stream: TStream; const aProgress:
@@ -151,7 +151,7 @@ begin
   P.UncompressedSize := R.Stream.Size;
   P.Progress := FProgress;
 
-  CheckLzma(_LzmaEnc_Encode(FEncoderHandle, @W, @R, @P, A, A));
+  CheckLzma(LzmaEnc_Encode(FEncoderHandle, @W, @R, @P, A, A));
   Result := Count;
 end;
 
@@ -180,9 +180,9 @@ begin
   FLzmaState.Construct;
   R.Init;
 
-  CheckLzma(_LzmaDec_Allocate(FLzmaState, PropData[0], PropDataLen, R));
+  CheckLzma(LzmaDec_Allocate(FLzmaState, PropData[0], PropDataLen, R));
 
-  _LzmaDec_Init(FLzmaState);
+  LzmaDec_Init(FLzmaState);
 
   FCurrentDataLen := 0;
 
@@ -194,7 +194,7 @@ procedure TLZMADecoderStream.BeforeDestruction;
 var R: TISzAlloc;
 begin
   R.Init;
-  _LzmaDec_Free(FLzmaState, R);
+  LzmaDec_Free(FLzmaState, R);
   FillChar(FLzmaState, SizeOf(FLzmaState), 0);
   inherited;
 end;
@@ -215,7 +215,7 @@ begin
     OutLen := Count - BufferPos;
     InLen := FCurrentDataLen;
 
-    CheckLzma(_LzmaDec_DecodeToBuf(FLzmaState, Buffer[BufferPos], OutLen, FData[FDataLen - FCurrentDataLen], InLen, LZMA_FINISH_ANY, Status));
+    CheckLzma(LzmaDec_DecodeToBuf(FLzmaState, Buffer[BufferPos], OutLen, FData[FDataLen - FCurrentDataLen], InLen, LZMA_FINISH_ANY, Status));
 
     Dec(FCurrentDataLen, InLen);
 
