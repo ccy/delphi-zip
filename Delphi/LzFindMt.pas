@@ -76,21 +76,28 @@ type
     MatchFinder: PCMatchFinder;
   end;
 
-procedure _MatchFinderMt_Construct(var p: TCMatchFinderMt); cdecl; external;
+procedure {$ifdef UNDERSCOREIMPORTNAME}_MatchFinderMt_Construct{$else}MatchFinderMt_Construct{$endif}(var p: TCMatchFinderMt); cdecl; external;
 
-procedure _MatchFinderMt_Destruct(var p: TCMatchFinderMt; var alloc: TISzAlloc); cdecl; external;
+procedure {$ifdef UNDERSCOREIMPORTNAME}_MatchFinderMt_Destruct{$else}MatchFinderMt_Destruct{$endif}(var p: TCMatchFinderMt; var alloc:
+    TISzAlloc); cdecl; external;
 
-function _MatchFinderMt_Create(var p: TCMatchFinderMt; historySize: UInt32; keepAddBufferBefore: UInt32;
-    matchMaxLen: UInt32; keepAddBufferAfter: UInt32; var alloc: TISzAlloc): TSRes; cdecl; external;
+function {$ifdef UNDERSCOREIMPORTNAME}_MatchFinderMt_Create{$else}MatchFinderMt_Create{$endif}(var p: TCMatchFinderMt; historySize: UInt32;
+    keepAddBufferBefore: UInt32; matchMaxLen: UInt32; keepAddBufferAfter:
+    UInt32; var alloc: TISzAlloc): TSRes; cdecl; external;
 
-procedure _MatchFinderMt_CreateVTable(var p: TCMatchFinderMt; var vTable: TIMatchFinder); cdecl; external;
+procedure {$ifdef UNDERSCOREIMPORTNAME}_MatchFinderMt_CreateVTable{$else}MatchFinderMt_CreateVTable{$endif}(var p: TCMatchFinderMt; var vTable:
+    TIMatchFinder); cdecl; external;
 
-procedure _MatchFinderMt_ReleaseStream(var p: TCMatchFinderMt); cdecl; external;
+procedure {$ifdef UNDERSCOREIMPORTNAME}_MatchFinderMt_ReleaseStream{$else}MatchFinderMt_ReleaseStream{$endif}(var p: TCMatchFinderMt); cdecl; external;
 
 implementation
 
 uses System.Win.Crtl, Winapi.Windows;
 
-{$L Win32\LzFindMt.obj}
+{$ifdef Win32}
+  {$L Win32\LzFindMt.obj}
+{$else}
+  {$L Win64\LzFindMt.o}
+{$endif}
 
 end.

@@ -25,23 +25,34 @@ type
     numThreads: Integer;    (* 1 or 2, default = 2 *)
   end;
 
-function _LzmaEnc_Create(var alloc: TISzAlloc): TCLzmaEncHandle; cdecl; external;
+function LzmaEnc_Create(var alloc: TISzAlloc): TCLzmaEncHandle; cdecl; external
+    name _PU + 'LzmaEnc_Create';
 
-procedure _LzmaEnc_Destroy(p: TCLzmaEncHandle; var alloc: TISzAlloc; var allocBig: TISzAlloc); cdecl; external;
+procedure LzmaEnc_Destroy(p: TCLzmaEncHandle; var alloc: TISzAlloc; var
+    allocBig: TISzAlloc); cdecl; external name _PU + 'LzmaEnc_Destroy';
 
-procedure _LzmaEncProps_Init(var p: TCLzmaEncProps); cdecl; external;
+procedure LzmaEncProps_Init(var p: TCLzmaEncProps); cdecl; external name _PU +
+    'LzmaEncProps_Init';
 
-function _LzmaEnc_SetProps(p: TCLzmaEncHandle; var props: TCLzmaEncProps): TSRes; cdecl; external;
+function LzmaEnc_SetProps(p: TCLzmaEncHandle; var props: TCLzmaEncProps):
+    TSRes; cdecl; external name _PU + 'LzmaEnc_SetProps';
 
-function _LzmaEnc_WriteProperties(p: TCLzmaEncHandle; properties: TBytes; var size: SIZE_T): TSRes; cdecl; external;
+function LzmaEnc_WriteProperties(p: TCLzmaEncHandle; properties: TBytes; var
+    size: SIZE_T): TSRes; cdecl; external name _PU + 'LzmaEnc_WriteProperties';
 
-function _LzmaEnc_Encode(p: TCLzmaEncHandle; outStream: PISeqOutStream; inStream: PISeqInStream;
-    progress: PICompressProgress; var alloc: TISzAlloc; var allocBig: TISzAlloc): TSRes; cdecl; external;
+function LzmaEnc_Encode(p: TCLzmaEncHandle; outStream: PISeqOutStream;
+    inStream: PISeqInStream; progress: PICompressProgress; var alloc:
+    TISzAlloc; var allocBig: TISzAlloc): TSRes; cdecl; external name _PU +
+    'LzmaEnc_Encode';
 
 implementation
 
 uses System.Win.Crtl;
 
-{$L Win32\LzmaEnc.obj}
+{$ifdef Win32}
+  {$L Win32\LzmaEnc.obj}
+{$else}
+  {$L Win64\LzmaEnc.o}
+{$endif}
 
 end.
