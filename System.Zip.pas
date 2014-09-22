@@ -157,6 +157,7 @@ type
     procedure SetComment(Value: string);
     procedure SetUTF8Support(const Value: Boolean);
     function LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
+    procedure CheckFileName(const ArchiveFileName: string);
   public
     class constructor Create;
     class destructor Destroy;
@@ -1164,6 +1165,12 @@ begin
   FFiles.Add(CentralHeader^);
 end;
 
+procedure TZipFile.CheckFileName(const ArchiveFileName: string);
+begin
+  if ArchiveFileName = '' then
+    raise EZipException.CreateRes(@SZipFileNameEmpty);
+end;
+
 procedure TZipFile.Add(const FileName: string; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
@@ -1171,6 +1178,7 @@ var
   LHeader: TZipHeader;
   LArchiveFileName: string;
 begin
+  CheckFileName(FileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
@@ -1190,8 +1198,8 @@ begin
     LHeader.InternalAttributes := 0;
     LHeader.ExternalAttributes := 0;                                               
     if ArchiveFileName <> '' then
-	  LArchiveFileName := ArchiveFileName
-	else
+	    LArchiveFileName := ArchiveFileName
+	  else
       LArchiveFileName := ExtractFileName(FileName);
     if FUTF8Support then
       LHeader.Flag := LHeader.Flag or (1 SHL 11); // Language encoding flag, UTF8
@@ -1210,6 +1218,7 @@ procedure TZipFile.Add(Data: TBytes; const ArchiveFileName: string;
 var
   LInStream: TStream;
 begin
+  CheckFileName(ArchiveFileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
@@ -1230,6 +1239,7 @@ procedure TZipFile.Add(Data: TStream; const ArchiveFileName: string;
 var
   LHeader: TZipHeader;
 begin
+  CheckFileName(ArchiveFileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
