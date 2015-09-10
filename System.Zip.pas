@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2014 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2015 Embarcadero Technologies, Inc. }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
 {                                                       }
@@ -327,6 +327,34 @@ uses
   System.RTLConsts,
   System.ZLib;
 
+function DateTimeToWinFileDate(DateTime: TDateTime): Integer;
+var
+  Year, Month, Day, Hour, Min, Sec, MSec: Word;
+begin
+  DecodeDate(DateTime, Year, Month, Day);
+  if (Year < 1980) or (Year > 2107)
+    then Result := 0
+  else
+  begin
+    DecodeTime(DateTime, Hour, Min, Sec, MSec);
+    LongRec(Result).Lo := (Sec shr 1) or (Min shl 5) or (Hour shl 11);
+    LongRec(Result).Hi := Day or (Month shl 5) or ((Year - 1980) shl 9);
+  end;
+end;
+
+function WinFileDateToDateTime(FileDate: Integer): TDateTime;
+begin
+  Result :=
+    EncodeDate(
+      LongRec(FileDate).Hi shr 9 + 1980,
+      LongRec(FileDate).Hi shr 5 and 15,
+      LongRec(FileDate).Hi and 31) +
+    EncodeTime(
+      LongRec(FileDate).Lo shr 11,
+      LongRec(FileDate).Lo shr 5 and 63,
+      LongRec(FileDate).Lo and 31 shl 1, 0);
+end;
+
 procedure VerifyRead(Stream: TStream; Buffer: TBytes; Count: Integer); overload;
 begin
   if Stream.Read(Buffer, Count) <> Count then
@@ -448,7 +476,7 @@ end;
 
 { TZipFile }
 
-function TZipFile.TBytesToString(B: TBytes) : string;
+function TZipFile.TBytesToString(B: TBytes): string;
 var
   E: TEncoding;
 begin
@@ -932,6 +960,7 @@ var
   LInStream, LOutStream: TStream;
   LHeader: TZipHeader;
   LDir, LFileName: string;
+  LModifiedDateTime: TDateTime;
 begin
   // Get decompression stream for file
   Read(Index, LInStream, LHeader);
@@ -955,7 +984,7 @@ begin
     LOutStream := TFileStream.Create(LFileName, fmCreate);
     try // And Copy from the decompression stream.
       // See Bit 3 at http://www.pkware.com/documents/casestudies/APPNOTE.TXT
-      if (LHeader.Flag and (1 SHL 3)) = 0 then
+      if (LHeader.Flag and (1 shl 3)) = 0 then
       begin
         // Empty files should not be read
         if FFiles[Index].UncompressedSize > 0 then
@@ -967,6 +996,12 @@ begin
       end;
     finally
       LOutStream.Free;
+    end;
+    if FileExists(LFileName) then
+    begin
+      LModifiedDateTime := WinFileDateToDateTime(LHeader.ModifiedDateTime);
+      TFile.SetCreationTime(LFileName, LModifiedDateTime);
+      TFile.SetLastWriteTime(LFileName, LModifiedDateTime);
     end;
   finally
     LInStream.Free;
@@ -996,7 +1031,7 @@ var
 begin
   Read(Index, LStream, LHeader);
   try
-    if (LHeader.Flag and (1 SHL 3)) = 0 then
+    if (LHeader.Flag and (1 shl 3)) = 0 then
     begin
       SetLength(Bytes, FFiles[Index].UncompressedSize);
       if FFiles[Index].UncompressedSize > 0 then // Special case for empty files.
@@ -1193,7 +1228,7 @@ begin
   try
     LHeader.Flag := 0;
     LHeader.CompressionMethod := UInt16(Compression);
-    LHeader.ModifiedDateTime := DateTimeToFileDate( tfile.GetLastWriteTime(FileName) );
+    LHeader.ModifiedDateTime := DateTimeToWinFileDate(TFile.GetLastWriteTime(FileName));
     LHeader.UncompressedSize := LInStream.Size;
     LHeader.InternalAttributes := 0;
     LHeader.ExternalAttributes := 0;                                               
@@ -1202,7 +1237,7 @@ begin
 	  else
       LArchiveFileName := ExtractFileName(FileName);
     if FUTF8Support then
-      LHeader.Flag := LHeader.Flag or (1 SHL 11); // Language encoding flag, UTF8
+      LHeader.Flag := LHeader.Flag or (1 shl 11); // Language encoding flag, UTF8
     LHeader.FileName := StringToTBytes(LArchiveFileName);
     LHeader.FileNameLength := Length(LHeader.FileName);
 
@@ -1251,11 +1286,11 @@ begin
   FillChar(LHeader, sizeof(LHeader), 0);
   LHeader.Flag := 0;
   LHeader.CompressionMethod := UInt16(Compression);
-  LHeader.ModifiedDateTime := DateTimeToFileDate( Now );
+  LHeader.ModifiedDateTime := DateTimeToWinFileDate(Now);
   LHeader.InternalAttributes := 0;
   LHeader.ExternalAttributes := 0;                                               
   if FUTF8Support then
-    LHeader.Flag := LHeader.Flag or (1 SHL 11); // Language encoding flag, UTF8
+    LHeader.Flag := LHeader.Flag or (1 shl 11); // Language encoding flag, UTF8
   LHeader.FileName := StringToTBytes(ArchiveFileName);
   LHeader.FileNameLength := Length(LHeader.FileName);
 
@@ -1275,4 +1310,3 @@ begin
 end;
 
 end.
-
