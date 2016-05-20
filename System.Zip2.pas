@@ -22,7 +22,7 @@
 
                         
 
-unit System.Zip;
+unit System.Zip2;
 
 interface
 
