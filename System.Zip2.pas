@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2013 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2014 Embarcadero Technologies, Inc. }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
 {                                                       }
@@ -250,6 +250,7 @@ type
     procedure SetUTF8Support(const Value: Boolean);
     function LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
     function ZIP64_LocateEndOfCentralHeader(var Header: TZip64_EndOfCentralDirectory): Boolean;
+    procedure CheckFileName(const ArchiveFileName: string);
   public
     class constructor Create;
     class destructor Destroy;
@@ -1660,6 +1661,12 @@ begin
   FFiles.Add(CentralHeader^);
 end;
 
+procedure TZipFile.CheckFileName(const ArchiveFileName: string);
+begin
+  if ArchiveFileName = '' then
+    raise EZipException.CreateRes(@SZipFileNameEmpty);
+end;
+
 procedure TZipFile.Add(const FileName: string; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
@@ -1667,6 +1674,7 @@ var
   LHeader: TZipHeader;
   LArchiveFileName: string;
 begin
+  CheckFileName(FileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
@@ -1707,6 +1715,7 @@ procedure TZipFile.Add(Data: TBytes; const ArchiveFileName: string;
 var
   LInStream: TStream;
 begin
+  CheckFileName(ArchiveFileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
@@ -1727,6 +1736,7 @@ procedure TZipFile.Add(Data: TStream; const ArchiveFileName: string;
 var
   LHeader: TZipHeader;
 begin
+  CheckFileName(ArchiveFileName);
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
 
