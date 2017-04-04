@@ -3,19 +3,21 @@ unit System.Zip.LZMA;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Zip.Common, LzmaDec, LzmaEnc;
+  System.SysUtils, System.Classes, System.Zip2, LzmaDec, LzmaEnc;
 
 type
   TLZMAEncoderStream = class(TStream)
   private
     FStream: TStream;
     FEncoderHandle: TCLzmaEncHandle;
-    FProgress: TCompressEvent;
+    FProgress: TZipProgressEvent;
+    FZipHeader: TZipHeader;
   public
-    constructor Create(const Stream: TStream; const aProgress: TCompressEvent);
-        reintroduce;
+    constructor Create(const Stream: TStream; aZipHeader: TZipHeader; const
+        aProgress: TZipProgressEvent); reintroduce;
     procedure AfterConstruction; override;
     procedure BeforeDestruction; override;
+    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
     function Write(const Buffer; Count: Longint): Longint; override;
   end;
 
@@ -26,10 +28,12 @@ type
     FDataLen: UInt32;
     FLzmaState: TCLzmaDec;
     FStream: TStream;
-    FProgress: TDecompressEvent;
+    FProgress: TZipProgressEvent;
+    FZipHeader: TZipHeader;
+    FDecompressSize: Int64;
   public
-    constructor Create(const Stream: TStream; const aProgress: TDecompressEvent);
-        reintroduce;
+    constructor Create(const Stream: TStream; aZipHeader: TZipHeader; const
+        aProgress: TZipProgressEvent); reintroduce;
     procedure AfterConstruction; override;
     procedure BeforeDestruction; override;
     function Read(Buffer: TBytes; Offset, Count: Longint): Longint; override;
@@ -37,7 +41,7 @@ type
 
 implementation
 
-uses Winapi.Windows, LzmaTypes, System.Zip2;
+uses Winapi.Windows, LzmaTypes;
 
 type
   PLzmaEncoderRead = ^TLzmaEncoderRead;
@@ -55,8 +59,9 @@ type
   PLzmaCompressProgress = ^TLzmaCompressProgress;
   TLzmaCompressProgress = record
     Proc: TCompressProgressProc;
+    ZipHeader: TZipHeader;
     UncompressedSize: UInt64;
-    Progress: TCompressEvent;
+    Progress: TZipProgressEvent;
   end;
 
 function LzmaReadProc(p: PISeqInStream; buf: PByte; var size: SIZE_T): TSRes; cdecl;
@@ -85,7 +90,7 @@ var R: PLzmaCompressProgress;
 begin
   R := PLzmaCompressProgress(p);
   if Assigned(R.Progress) then
-    R.Progress(nil, inSize, R.UncompressedSize, outSize);
+    R.Progress(nil, TEncoding.Default.GetString(R.ZipHeader.FileName), R.ZipHeader, inSize);
   Result := SZ_OK;
 end;
 
@@ -126,12 +131,20 @@ begin
   LzmaEnc_Destroy(FEncoderHandle, R, R);
 end;
 
-constructor TLZMAEncoderStream.Create(const Stream: TStream; const aProgress:
-    TCompressEvent);
+constructor TLZMAEncoderStream.Create(const Stream: TStream; aZipHeader:
+    TZipHeader; const aProgress: TZipProgressEvent);
 begin
   inherited Create;
   FStream := Stream;
+  FZipHeader := aZipHeader;
   FProgress := aProgress;
+end;
+
+function TLZMAEncoderStream.Seek(const Offset: Int64;
+  Origin: TSeekOrigin): Int64;
+begin
+  if (Offset = 0) and (Origin = soCurrent) then
+    Result := FZipHeader.UncompressedSize;
 end;
 
 function TLZMAEncoderStream.Write(const Buffer; Count: Longint): Longint;
@@ -148,6 +161,7 @@ begin
   W.Stream := FStream;
 
   P.Proc := LzmaProgressProc;
+  P.ZipHeader := FZipHeader;
   P.UncompressedSize := R.Stream.Size;
   P.Progress := FProgress;
 
@@ -155,12 +169,14 @@ begin
   Result := Count;
 end;
 
-constructor TLZMADecoderStream.Create(const Stream: TStream; const aProgress:
-    TDecompressEvent);
+constructor TLZMADecoderStream.Create(const Stream: TStream; aZipHeader:
+    TZipHeader; const aProgress: TZipProgressEvent);
 begin
   inherited Create;
   FStream := Stream;
+  FZipHeader := aZipHeader;
   FProgress := aProgress;
+  FDecompressSize := 0;
 end;
 
 procedure TLZMADecoderStream.AfterConstruction;
@@ -220,10 +236,11 @@ begin
     Dec(FCurrentDataLen, InLen);
 
     Inc(BufferPos, OutLen);
+    Inc(FDecompressSize, OutLen);
   until Status <> LZMA_STATUS_NEEDS_MORE_INPUT;
 
   if Assigned(FProgress) then
-    FProgress(Self, FStream.Position, FStream.Size);
+    FProgress(Self, TEncoding.Default.GetString(FZipHeader.FileName), FZipHeader, FDecompressSize);
 
   Result := BufferPos;
 end;
@@ -233,11 +250,11 @@ begin
   TZipFile.RegisterCompressionHandler(zcLZMA,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TLZMAEncoderStream.Create(InStream, ZipFile.OnCompress);
+      Result := TLZMAEncoderStream.Create(InStream, Item, ZipFile.OnProgress);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TLZMADecoderStream.Create(InStream, ZipFile.OnDecompress);
+      Result := TLZMADecoderStream.Create(InStream, Item, ZipFile.OnProgress);
     end
   );
 end;

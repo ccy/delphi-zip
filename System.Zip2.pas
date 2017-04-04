@@ -2,7 +2,8 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2015 Embarcadero Technologies, Inc. }
+{ Copyright(c) 2016 Embarcadero Technologies, Inc.      }
+{              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
 {                                                       }
@@ -29,8 +30,7 @@ uses
   System.SysUtils,
   System.IOUtils,
   System.Generics.Collections,
-  System.Classes,
-  System.Zip.Common;
+  System.Classes;
 
 type
   /// <summary> Zip Compression Method Enumeration </summary>
@@ -223,6 +223,9 @@ type
   /// </remarks>
   TStreamConstructor = reference to function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream;
 
+  /// <summary>   Callback to create a custom stream  based on the original</summary>
+  TCreateCustomStreamCallBack = reference to function(const InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader; IsEncrypted: Boolean): TStream;
+  TOnCreateCustomStream = function(const InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader; IsEncrypted: Boolean): TStream of object;
   /// <summary> Class for creating and reading .ZIP files.
   /// </summary>
   TZipFile = class
@@ -230,6 +233,8 @@ type
     TCompressionDict = TDictionary< TZipCompression , TPair<TStreamConstructor, TStreamConstructor > >;
   private class var
     FCompressionHandler: TCompressionDict;
+    FOnCreateDecompressStream: TOnCreateCustomStream;
+    FCreateDecompressStreamCallBack: TCreateCustomStreamCallBack;
   private
     FMode: TZipMode;
     FStream: TStream;
@@ -242,8 +247,6 @@ type
     FOnProgress: TZipProgressEvent;
     FCurrentFile: string;
     FCurrentHeader: TZipHeader;
-    FOnCompress: TCompressEvent;
-    FOnDecompress: TDecompressEvent;
     function TBytesToString(B: TBytes): string;
     function StringToTBytes(S: string): TBytes;
     function GetFileComment(Index: Integer): string;
@@ -290,6 +293,9 @@ type
     /// <param name="Compression">Compression mode.</param>
     /// <param name="ZipProgress">On progress callback.</param>
     class procedure ZipDirectoryContents(const ZipFileName: string; const Path: string; Compression: TZipCompression = zcDeflate; ZipProgress: TZipProgressEvent = nil); static;
+
+    /// <summary> Checks if header extra field contains unicode path, if true AFilename contains the unicode path</summary>
+    class function GetUTF8PathFromExtraField(const AHeader: TZipHeader; out AFileName: string): Boolean;
 
     /// <summary> Create a TZipFile</summary>
     constructor Create;
@@ -387,6 +393,14 @@ type
     procedure Add(Data: TStream; LocalHeader: TZipHeader; CentralHeader: PZipHeader = nil); overload;
                                                          
                                                        
+    /// <summary>
+    /// Event fired before a file inside a zip file is decompressed, allows access to the raw stream for decrypt purposes
+    /// </summary>
+    class property OnCreateDecompressStream: TOnCreateCustomStream read FOnCreateDecompressStream write FOnCreateDecompressStream;
+    /// <summary>
+    /// Callback called before a file inside a zip file is decompressed, allows access to the raw stream for decrypt purposes
+    /// </summary>
+    class property CreateDecompressStreamCallBack: TCreateCustomStreamCallBack read FCreateDecompressStreamCallBack write FCreateDecompressStreamCallBack;
 
     /// <summary> Translate from FileName to index in ZIP Central Header
     /// </summary>
@@ -429,8 +443,6 @@ type
     property UTF8Support: Boolean read FUTF8Support write SetUTF8Support default True;
     /// <summary> On progress event. </summary>
     property OnProgress: TZipProgressEvent read FOnProgress write FOnProgress;
-    property OnCompress: TCompressEvent read FOnCompress write FOnCompress;
-    property OnDecompress: TDecompressEvent read FOnDecompress write FOnDecompress;
   end;
 
 implementation
@@ -438,9 +450,47 @@ implementation
 uses
   System.RTLConsts,
   System.ZLib,
-  System.ZLib.Progress
+  System.Types
 {$ifdef MSWINDOWS}, Winapi.Windows{$endif}
   ;
+
+function DateTimeToWinFileDate(DateTime: TDateTime): UInt32;
+var
+  Year, Month, Day, Hour, Min, Sec, MSec: Word;
+begin
+  DecodeDate(DateTime, Year, Month, Day);
+  if (Year < 1980) or (Year > 2107)
+    then Result := 0
+  else
+  begin
+    DecodeTime(DateTime, Hour, Min, Sec, MSec);
+    LongRec(Result).Lo := (Sec shr 1) or (Min shl 5) or (Hour shl 11);
+    LongRec(Result).Hi := Day or (Month shl 5) or ((Year - 1980) shl 9);
+  end;
+end;
+
+function WinFileDateToDateTime(FileDate: UInt32; out DateTime: TDateTime): Boolean;
+var
+  LDate: TDateTime;
+  LTime: TDateTime;
+begin
+  Result := TryEncodeDate(
+    LongRec(FileDate).Hi shr 9 + 1980,
+    LongRec(FileDate).Hi shr 5 and 15,
+    LongRec(FileDate).Hi and 31,
+    LDate);
+
+  if Result then
+  begin
+    Result := TryEncodeTime(
+      LongRec(FileDate).Lo shr 11,
+      LongRec(FileDate).Lo shr 5 and 63,
+      LongRec(FileDate).Lo and 31 shl 1, 0, LTime);
+
+    if Result then
+      DateTime := LDate + LTime;
+  end;
+end;
 
 function TZipHeader.GetZIP64_CompressedSize: UInt64;
 var Z64: TZipExtraField_ZIP64;
@@ -737,34 +787,6 @@ begin
   Dec(Result);
 end;
 
-function DateTimeToWinFileDate(DateTime: TDateTime): Integer;
-var
-  Year, Month, Day, Hour, Min, Sec, MSec: Word;
-begin
-  DecodeDate(DateTime, Year, Month, Day);
-  if (Year < 1980) or (Year > 2107)
-    then Result := 0
-  else
-  begin
-    DecodeTime(DateTime, Hour, Min, Sec, MSec);
-    LongRec(Result).Lo := (Sec shr 1) or (Min shl 5) or (Hour shl 11);
-    LongRec(Result).Hi := Day or (Month shl 5) or ((Year - 1980) shl 9);
-  end;
-end;
-
-function WinFileDateToDateTime(FileDate: Integer): TDateTime;
-begin
-  Result :=
-    EncodeDate(
-      LongRec(FileDate).Hi shr 9 + 1980,
-      LongRec(FileDate).Hi shr 5 and 15,
-      LongRec(FileDate).Hi and 31) +
-    EncodeTime(
-      LongRec(FileDate).Lo shr 11,
-      LongRec(FileDate).Lo shr 5 and 63,
-      LongRec(FileDate).Lo and 31 shl 1, 0);
-end;
-
 procedure VerifyRead(Stream: TStream; Buffer: TBytes; Count: Integer); overload;
 begin
   if Stream.Read(Buffer, Count) <> Count then
@@ -819,14 +841,10 @@ type
   private
     FStream: TStream;
     FPos: Int64;
-    FCompress: TCompressEvent;
-    FDecompress: TDecompressEvent;
-    FZipFileSize: UInt64;
   protected
     function GetSize: Int64; override;
   public
-    constructor Create(Stream: TStream; const aCompress: TCompressEvent; const
-        aDecompress: TDecompressEvent);
+    constructor Create(Stream: TStream);
 
     function Read(var Buffer; Count: Longint): Longint; overload; override;
     function Write(const Buffer; Count: Longint): Longint; overload; override;
@@ -837,13 +855,10 @@ type
 
 { TStoredStream }
 
-constructor TStoredStream.Create(Stream: TStream; const aCompress:
-    TCompressEvent; const aDecompress: TDecompressEvent);
+constructor TStoredStream.Create(Stream: TStream);
 begin
   FStream := Stream;
   FPos := FStream.Position;
-  FCompress := aCompress;
-  FDecompress := aDecompress;
 end;
 
 function TStoredStream.GetSize: Int64;
@@ -854,15 +869,11 @@ end;
 function TStoredStream.Read(var Buffer; Count: Longint): Longint;
 begin
   Result := FStream.Read(Buffer, Count);
-  if Assigned(FDecompress) then
-    FDeCompress(Self, Self.Position, Self.Size);
 end;
 
 function TStoredStream.Read(Buffer: TBytes; Offset, Count: Longint): Longint;
 begin
   Result := FStream.Read(Buffer, Offset, Count);
-  if Assigned(FDecompress) then
-    FDeCompress(Self, Self.Position, Self.Size);
 end;
 
 function TStoredStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
@@ -873,15 +884,11 @@ end;
 function TStoredStream.Write(const Buffer; Count: Longint): Longint;
 begin
   Result := FStream.Write(Buffer, Count);
-  if Assigned(FCompress) then
-    FCompress(Self, Self.Position, FZipFileSize, FStream.Size);
 end;
 
 function TStoredStream.Write(const Buffer: TBytes; Offset, Count: Longint): Longint;
 begin
   Result := FStream.Write(Buffer, Offset, Count);
-  if Assigned(FCompress) then
-    FCompress(Self, Self.Position, FZipFileSize, FStream.Size);
 end;
 
 function TZipCompressionToString(Compression: TZipCompression): string;
@@ -1117,22 +1124,35 @@ begin
   RegisterCompressionHandler(zcStored,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TStoredStream.Create(InStream, ZipFile.OnCompress, ZipFile.OnDecompress);
-      (Result as TStoredStream).FZipFileSize := Item.ZIP64_UncompressedSize;
+      Result := TStoredStream.Create(InStream);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TStoredStream.Create(InStream, ZipFile.OnCompress, ZipFile.OnDecompress);
+      Result := TStoredStream.Create(InStream);
     end);
 
   RegisterCompressionHandler(zcDeflate,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TZCompressionStream2.Create(InStream, zcDefault, -15, ZipFile.OnCompress);
+      Result := TZCompressionStream.Create(InStream, zcDefault, -15);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
+    var
+      LStream : TStream;
+      LIsEncrypted: Boolean;
     begin
-      Result := TZDecompressionStream2.Create(InStream, -15, ZipFile.OnDecompress);
+      // From https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+      // Section 4.4.4 general purpose bit flag: (2 bytes)
+      // Bit 0: If set, indicates that the file is encrypted.
+      LIsEncrypted := (Item.Flag and 1) = 1;
+
+      if Assigned(TZipFile.FOnCreateDecompressStream) then
+        LStream := TZipFile.FOnCreateDecompressStream(InStream, ZipFile, Item, LIsEncrypted)
+      else if Assigned(TZipFile.FCreateDecompressStreamCallBack) then
+        LStream := TZipFile.FCreateDecompressStreamCallBack(InStream, ZipFile, Item, LIsEncrypted)
+      else
+        LStream := InStream;
+      Result := TZDecompressionStream.Create(LStream, -15, LStream <> InStream);
     end);
 end;
 
@@ -1267,14 +1287,18 @@ var
   LFile: string;
   LZFile: string;
   LPath: string;
+  LFiles: TStringDynArray;
 begin
   LZipFile := TZipFile.Create;
   try
     if Assigned(ZipProgress) then
       LZipFile.OnProgress := ZipProgress;
+    if TFile.Exists(ZipFileName) then
+      TFile.Delete(ZipFileName);
+    LFiles := TDirectory.GetFiles(Path, '*', TSearchOption.soAllDirectories);
     LZipFile.Open(ZipFileName, zmWrite);
     LPath := System.SysUtils.IncludeTrailingPathDelimiter(Path);
-    for LFile in TDirectory.GetFiles(Path, '*', TSearchOption.soAllDirectories) do
+    for LFile in LFiles do
     begin
       // Strip off root path
 {$IFDEF MSWINDOWS}
@@ -1286,6 +1310,51 @@ begin
     end;
   finally
     LZipFile.Free;
+  end;
+end;
+
+// Extract Unicode Path
+// Based on section 4.6.9 -Info-ZIP Unicode Path Extra Field (0x7075) from
+// https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+// Stores the UTF-8 version of the file name field as stored in the
+//       local header and central directory header. (Last Revision 20070912)
+//
+//         Value         Size        Description
+//         -----         ----        -----------
+// (UPath) 0x7075        Short       tag for this extra block type ("up")
+//         TSize         Short       total data size for this block
+//         Version       1 byte      version of this extra field, currently 1
+//         NameCRC32     4 bytes     File Name Field CRC32 Checksum
+//         UnicodeName   Variable    UTF-8 version of the entry File Name
+class function TZipFile.GetUTF8PathFromExtraField(const AHeader: TZipHeader; out AFileName: string): Boolean;
+const
+  UPATH = $7075;
+  SIZEPOS = 2;
+  CRCPOS = 5;
+  PATHPOS = 9;
+  PATHSIZESUB = 5;
+var
+  I: Integer;
+  LTotalSize: Word;
+  LCRC: Cardinal;
+  LPathCRC: Cardinal;
+begin
+  Result := False;
+  for I := 0 to AHeader.ExtraFieldLength - 2 do
+  begin
+    if PWord(@AHeader.ExtraField[I])^ = UPATH then
+    begin
+      LTotalSize := PWord(@AHeader.ExtraField[I + SIZEPOS])^;
+      LCRC := PCardinal(@AHeader.ExtraField[I + CRCPOS])^;
+      LPathCRC := crc32(0, nil, 0);
+      LPathCRC := crc32(LPathCRC, @AHeader.FileName[0], Length(AHeader.FileName));
+      if LPathCRC = LCRC then
+      begin
+        AFileName := TEncoding.UTF8.GetString(AHeader.ExtraField, I + PATHPOS, LTotalSize - PATHSIZESUB);
+        Result := True;
+      end;
+      Break;
+    end;
   end;
 end;
 
@@ -1318,7 +1387,7 @@ var
 begin
   Close; // In case the user had a file open
   case OpenMode of
-    zmRead:      LMode := fmOpenRead + fmShareDenyWrite;
+    zmRead:      LMode := fmOpenRead;
     zmReadWrite: LMode := fmOpenReadWrite;
     zmWrite:     LMode := fmCreate;
     else
@@ -1476,16 +1545,13 @@ var
   LHeader: TZipHeader;
   LDir, LFileName: string;
   LModifiedDateTime: TDateTime;
-  Ex: TZipExtraFields;
-  NTFS: TZipExtraField_NTFS;
-  i: NativeInt;
-  F: TZipExtraField;
 begin
   // Get decompression stream for file
   Read(Index, LInStream, LHeader);
   FCurrentHeader := LHeader;
   try
-    LFileName := TBytesToString(FFiles[Index].FileName);
+    if not GetUTF8PathFromExtraField(LHeader, LFileName) then
+      LFileName := TBytesToString(FFiles[Index].FileName);
 {$IFDEF MSWINDOWS} // ZIP stores files with '/', so translate to a relative Windows path.
     LFileName := StringReplace(LFileName, '/', '\', [rfReplaceAll]);
 {$ENDIF}
@@ -1518,23 +1584,16 @@ begin
       if Assigned(FOnProgress) then
         FOnProgress(Self, FCurrentFile, FCurrentHeader, LOutStream.Position);
     finally
-      if (LOutStream as TFileStream).Handle <> INVALID_HANDLE_VALUE then begin
-        if FFiles[Index].ExtraFieldLength > 0 then begin
-          Ex := FFiles[Index].ExtraField;
-          if Ex.Get(EXTRAFIELD_ID_NTFS, F, i) then begin
-            NTFS := F;
-            SetFileTime((LOutStream as TFileStream).Handle, @NTFS.CTime, @NTFS.ATime, @NTFS.MTime);
-          end;
-        end;
-      end;
       LOutStream.Free;
       FCurrentFile := '';
     end;
     if FileExists(LFileName) then
     begin
-      LModifiedDateTime := WinFileDateToDateTime(LHeader.ModifiedDateTime);
-      TFile.SetCreationTime(LFileName, LModifiedDateTime);
-      TFile.SetLastWriteTime(LFileName, LModifiedDateTime);
+      if WinFileDateToDateTime(LHeader.ModifiedDateTime, LModifiedDateTime) then
+      begin
+        TFile.SetCreationTime(LFileName, LModifiedDateTime);
+        TFile.SetLastWriteTime(LFileName, LModifiedDateTime);
+      end;
 {$IFDEF MSWINDOWS}
       if (Hi(FFiles[Index].MadeByVersion) = MADEBY_MSDOS) then
         TFile.SetAttributes(LFileName, TFile.IntegerToFileAttributes(FFiles[Index].ExternalAttributes and $000000FF));
@@ -1712,7 +1771,7 @@ begin
   if LCompressStream is TZCompressionStream then
     (LCompressStream as TZCompressionStream).OnProgress := DoZLibProgress;
   try
-    if TZipCompression(LocalHeader.CompressionMethod) in [zcDeflate, zcLZMA] then
+    if TZipCompression(LocalHeader.CompressionMethod) = zcLZMA then
       LCompressStream.Write(Data, 0)
     else
       LCompressStream.CopyFrom(Data, LocalHeader.ZIP64_UncompressedSize);
@@ -1805,9 +1864,8 @@ begin
       LHeader.Flag := LHeader.Flag or (1 shl 11); // Language encoding flag, UTF8
     LHeader.FileName := StringToTBytes(LArchiveFileName);
     LHeader.FileNameLength := Length(LHeader.FileName);
-    LHeader.SetExtraField_NTFS(FileName);
 
-//    LHeader.ExtraFieldLength := 0;
+    LHeader.ExtraFieldLength := 0;
     Add(LInStream, LHeader);
   finally
     LInStream.Free;

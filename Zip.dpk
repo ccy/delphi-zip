@@ -34,8 +34,6 @@ requires
   LzmaSDK;
 
 contains
-  System.Zip.Common in 'System.Zip.Common.pas',
-  System.ZLib.Progress in 'System.ZLib.Progress.pas',
   System.Zip2 in 'System.Zip2.pas',
   System.Zip.LZMA in 'System.Zip.LZMA.pas';
 
