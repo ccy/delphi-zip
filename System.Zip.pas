@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 2016 Embarcadero Technologies, Inc.      }
+{ Copyright(c) 1995-2017 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -172,8 +172,9 @@ type
     procedure SetComment(Value: string);
     procedure SetUTF8Support(const Value: Boolean);
     function LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
-    procedure CheckFileName(const ArchiveFileName: string);
     procedure DoZLibProgress(Sender: TObject);
+  protected
+    procedure CheckFileName(const ArchiveFileName: string); virtual;
   public
     class constructor Create;
     class destructor Destroy;
