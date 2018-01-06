@@ -32,6 +32,9 @@ uses
   System.Generics.Collections,
   System.Classes;
 
+resourcestring
+  SZipInvalidExtraField = 'Invalid extra field';
+
 type
   /// <summary> Zip Compression Method Enumeration </summary>
   TZipCompression = (
@@ -390,8 +393,10 @@ type
     /// <param name="ArchiveFileName">Path + Name of file in the arcive.</param>
     /// <param name="Compression">Compression mode.</param>
     /// <param name="AExternalAttributes">External attributes for this file.</param>
+{$WARN SYMBOL_PLATFORM OFF}
     procedure Add(Data: TStream; const ArchiveFileName: string; Compression: TZipCompression = zcDeflate;
       AExternalAttributes: TFileAttributes = []); overload;
+{$WARN SYMBOL_PLATFORM ON}
     /// <summary> Add a memory file to the ZIP file. Allows programmer to specify
     ///  the Local and Central Header data for more flexibility on what gets written.
     ///  Minimal vailidation is done on the Header parameters; speficying bad options
@@ -462,8 +467,9 @@ uses
   System.RTLConsts,
   System.ZLib,
   System.Types
-{$ifdef MSWINDOWS}, Winapi.Windows{$endif}
-  ;
+{$IFDEF MSWINDOWS}
+  , Winapi.Windows
+{$ENDIF};
 
 function DateTimeToWinFileDate(DateTime: TDateTime): UInt32;
 var
@@ -623,7 +629,7 @@ begin
   iHeadSize := SizeOf(HeaderID) + SizeOf(DataSize);
 
   if Length(aRawData) < iHeadSize then
-    raise EZipException.Create('Invalid Zip ExtraField');
+    raise EZipException.CreateRes(@SZipInvalidExtraField);
 
   Move(aRawData[0], Self, iHeadSize);
 
@@ -631,7 +637,7 @@ begin
   Move(aRawData[iHeadSize], Data[0], Length(Data));
 
   if DataSize <> Length(Data) then
-    raise EZipException.Create('Invalid Zip ExtraField');
+    raise EZipException.CreateRes(@SZipInvalidExtraField);
 end;
 
 class operator TZipExtraField.Implicit(const A: TZipExtraField): TBytes;
@@ -1672,6 +1678,8 @@ begin
   Read(IndexOf(FileName), Bytes);
 end;
 
+{$HINTS OFF}
+
 procedure TZipFile.Read(Index: Integer; out Bytes: TBytes);
 var
   LStream: TStream;
@@ -1705,6 +1713,9 @@ begin
     LStream.Free;
   end;
 end;
+
+{$HINTS ON}
+
 //{$ENDIF}
 
 procedure TZipFile.Read(const FileName: string; out Stream: TStream; out LocalHeader: TZipHeader);
@@ -1952,6 +1963,8 @@ begin
   end;
 end;
 
+{$WARN SYMBOL_PLATFORM OFF}
+
 procedure TZipFile.Add(Data: TStream; const ArchiveFileName: string;
   Compression: TZipCompression; AExternalAttributes: TFileAttributes);
 var
@@ -1989,6 +2002,7 @@ begin
   Add(Data, LHeader);
 end;
 
+{$WARN SYMBOL_PLATFORM ON}
 
 function TZipFile.IndexOf(const FileName: string): Integer;
 var
