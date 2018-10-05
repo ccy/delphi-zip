@@ -1711,6 +1711,7 @@ begin
     FStream.Read(LocalHeader.ExtraField, LocalHeader.ExtraFieldLength);
   end;
   // Create Decompression stream.
+  FCurrentHeader := LocalHeader;
   Stream := FCompressionHandler[TZipCompression(FFiles[Index].CompressionMethod)].Value(FStream, Self, LocalHeader);
   if Stream is TZDecompressionStream then
     (Stream as TZDecompressionStream).OnProgress := DoZLibProgress;
