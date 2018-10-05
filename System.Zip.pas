@@ -778,7 +778,7 @@ begin
   try
     Z := TZipFile.Create;
     try
-      Z.FStream := TFileStream.Create(ZipFileName, fmOpenRead);
+      Z.FStream := TFileStream.Create(ZipFileName, fmOpenRead or fmShareDenyWrite);
       try
         Result := Z.LocateEndOfCentralHeader(Header);
       finally
@@ -963,7 +963,7 @@ var
 begin
   Close; // In case the user had a file open
   case OpenMode of
-    zmRead:      LMode := fmOpenRead;
+    zmRead:      LMode := fmOpenRead or fmShareDenyWrite;
     zmReadWrite: LMode := fmOpenReadWrite;
     zmWrite:     LMode := fmCreate;
     else
@@ -1377,7 +1377,7 @@ begin
   FillChar(LHeader, sizeof(LHeader), 0);
   LHeader.Flag := 0;
   FCurrentFile := FileName;
-  LInStream := TFileStream.Create(FileName, fmOpenRead);
+  LInStream := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
   try
     {$IFDEF MSWINDOWS}
     LHeader.MadeByVersion := Word(MADEBY_MSDOS shl 8);
