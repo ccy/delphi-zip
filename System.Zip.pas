@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2017 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2018 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -114,6 +114,9 @@ type
     FileName: TBytes;
     ExtraField: TBytes;
     FileComment: TBytes;
+    function GetUTF8Support: Boolean;
+    procedure SetUTF8Support(value: Boolean);
+    property UTF8Support: Boolean read GetUTF8Support write SetUTF8Support;
   end;
 
   PZipHeader = ^TZipHeader;
@@ -146,6 +149,8 @@ type
     FCompressionHandler: TCompressionDict;
     FOnCreateDecompressStream: TOnCreateCustomStream;
     FCreateDecompressStreamCallBack: TCreateCustomStreamCallBack;
+  protected class var
+    FCP437Encoding: TEncoding;
   private
     FMode: TZipMode;
     FStream: TStream;
@@ -154,27 +159,29 @@ type
     FEndFileData: Int64;
     FFiles: TList<TZipHeader>;
     FComment: TBytes;
+    FEncoding: TEncoding;
     FUTF8Support: Boolean;
     FOnProgress: TZipProgressEvent;
     FCurrentFile: string;
     FCurrentHeader: TZipHeader;
-    function TBytesToString(B: TBytes): string;
-    function StringToTBytes(S: string): TBytes;
-    function GetFileComment(Index: Integer): string;
+    function GetEncoding: TEncoding; virtual;
     function GetFileCount: Integer;
     function GetFileInfo(Index: Integer): TZipHeader;
     function GetFileInfos: TArray<TZipHeader>;
     function GetFileName(Index: Integer): string;
     function GetFileNames: TArray<string>;
-    function GetComment: string;
     procedure ReadCentralHeader;
-    procedure SetFileComment(Index: Integer; Value: string);
-    procedure SetComment(Value: string);
     procedure SetUTF8Support(const Value: Boolean);
     function LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
     procedure DoZLibProgress(Sender: TObject);
   protected
+    function InternalGetFileName(Index: Integer): string; virtual;
     procedure CheckFileName(const ArchiveFileName: string); virtual;
+    function GetComment: string; virtual;
+    function GetFileComment(Index: Integer): string; virtual;
+    function GetTextEncode(const Header: TZipHeader): TEncoding; virtual;
+    procedure SetComment(Value: string); virtual;
+    procedure SetFileComment(Index: Integer; Value: string); virtual;
   public
     class constructor Create;
     class destructor Destroy;
@@ -194,14 +201,16 @@ type
     /// <param name="ZipFileName">File name of the ZIP file</param>
     /// <param name="Path">Path to extract to disk</param>
     /// <param name="ZipProgress">On progress callback.</param>
-    class procedure ExtractZipFile(const ZipFileName: string; const Path: string; ZipProgress: TZipProgressEvent = nil); static;
+    class procedure ExtractZipFile(const ZipFileName: string; const Path: string; ZipProgress: TZipProgressEvent = nil); overload; static;
+    class procedure ExtractZipFile(const ZipFileName: string; const Path: string; const Encoding: TEncoding; ZipProgress: TZipProgressEvent = nil); overload; static;
 
     /// <summary> Zip the contents of a directory </summary>
     /// <param name="ZipFileName">File name of the ZIP file</param>
     /// <param name="Path">Path of directory to zip</param>
     /// <param name="Compression">Compression mode.</param>
     /// <param name="ZipProgress">On progress callback.</param>
-    class procedure ZipDirectoryContents(const ZipFileName: string; const Path: string; Compression: TZipCompression = zcDeflate; ZipProgress: TZipProgressEvent = nil); static;
+    class procedure ZipDirectoryContents(const ZipFileName: string; const Path: string; Compression: TZipCompression = zcDeflate; ZipProgress: TZipProgressEvent = nil); overload; static;
+    class procedure ZipDirectoryContents(const ZipFileName: string; const Path: string; const Encoding: TEncoding; Compression: TZipCompression = zcDeflate; ZipProgress: TZipProgressEvent = nil); overload; static;
 
     /// <summary> Checks if header extra field contains unicode path, if true AFilename contains the unicode path</summary>
     class function GetUTF8PathFromExtraField(const AHeader: TZipHeader; out AFileName: string): Boolean;
@@ -350,6 +359,7 @@ type
     /// </remarks>
     property Comment: string read GetComment write SetComment;
     property UTF8Support: Boolean read FUTF8Support write SetUTF8Support default True;
+    property Encoding: TEncoding read GetEncoding write FEncoding;
     /// <summary> On progress event. </summary>
     property OnProgress: TZipProgressEvent read FOnProgress write FOnProgress;
   end;
@@ -528,50 +538,69 @@ begin
   end;
 end;
 
+{ TZipHeader }
+
+const
+  EFSFLAG = 1 shl 11; // Language encoding flag (EFS)
+
+function TZipHeader.GetUTF8Support: Boolean;
+begin
+  Result := Flag and EFSFLAG = EFSFLAG; // Language encoding flag, UTF8
+end;
+
+procedure TZipHeader.SetUTF8Support(value: Boolean);
+begin
+  if Value then
+    Flag := Flag or EFSFLAG
+  else
+    Flag := Flag and (not EFSFLAG);
+end;
+
 { TZipFile }
 
-function TZipFile.TBytesToString(B: TBytes): string;
+function TZipFile.GetComment: string; // System comment.
 var
   E: TEncoding;
-begin
-  if FUTF8Support then 
-    E := TEncoding.GetEncoding(65001)
-  else
-    E := TEncoding.GetEncoding(437);
-  try
-    Result := E.GetString(B);
-  finally
-    E.Free;
-  end;
-end;
-
-function TZipFile.StringToTBytes(S: string): TBytes;
-var
-  E: TEncoding;
-begin
-  if FUTF8Support then 
-    E := TEncoding.GetEncoding(65001)
-  else
-    E := TEncoding.GetEncoding(437);
-  try
-    Result := E.GetBytes(S);
-  finally
-    E.Free;
-  end;
-end;
-
-function TZipFile.GetComment: string;
 begin
   if FMode = zmClosed then
     raise EZipException.CreateRes(@SZipNotOpen);
-  Result := TBytesToString(FComment);
+  if self.UTF8Support then
+    E := TEncoding.UTF8
+  else
+    E := Encoding;
+  Result := E.GetString(FComment);
+end;
+
+function TZipFile.GetEncoding: TEncoding;
+
+  function GetCP437Encoding: TEncoding;
+  var
+    E: TEncoding;
+  begin
+    if FCP437Encoding = nil  then
+    begin
+      E := TEncoding.GetEncoding(437);
+{$IFDEF AUTOREFCOUNT}
+      E.__ObjAddRef;
+{$ENDIF AUTOREFCOUNT}
+      if AtomicCmpExchange(Pointer(FCP437Encoding), Pointer(E), nil) <> nil then
+        E.Free;
+    end;
+    Result := FCP437Encoding;
+  end;
+
+begin
+  if FEncoding = nil then
+    Result := GetCP437Encoding
+  else
+    Result := FEncoding;
 end;
 
 function TZipFile.GetFileComment(Index: Integer): string;
 begin
   if FMode = zmClosed then
     raise EZipException.CreateRes(@SZipNotOpen);
-  Result := TBytesToString(FFiles[Index].FileComment);
+  Result := GetTextEncode(FFiles[Index]).GetString(FFiles[Index].FileComment);
 end;
 
 function TZipFile.GetFileCount: Integer;
@@ -595,11 +624,16 @@ begin
   Result := FFiles.ToArray;
 end;
 
+function TZipFile.InternalGetFileName(Index: Integer): string;
+begin
+  Result := GetTextEncode(FFiles[Index]).GetString(FFiles[Index].FileName);
+end;
+
 function TZipFile.GetFileName(Index: Integer): string;
 begin
   if FMode = zmClosed then
     raise EZipException.CreateRes(@SZipNotOpen);
-  Result := TBytesToString(FFiles[Index].FileName);
+  Result := InternalGetFileName(Index);
 end;
 
 function TZipFile.GetFileNames: TArray<string>;
@@ -610,7 +644,7 @@ begin
     raise EZipException.CreateRes(@SZipNotOpen);
   SetLength(Result, FFiles.Count);
   for I := 0 to High(Result) do
-    Result[I] := TBytesToString(FFiles[I].FileName);
+    Result[I] := InternalGetFileName(I);
 end;
 
 procedure TZipFile.ReadCentralHeader;
@@ -672,8 +706,6 @@ begin
       SetLength(LHeader.FileComment, LHeader.FileCommentLength);
       VerifyRead(FStream, LHeader.FileComment, LHeader.FileCommentLength);
     end;
-    if (LHeader.Flag and (1 shl 11)) = 0 then
-      FUTF8Support := False;
 
     // Save File Header in interal list
     FFiles.Add(LHeader);
@@ -681,8 +713,15 @@ begin
 end;
 
 procedure TZipFile.SetComment(Value: string);
+var
+  E: TEncoding;
 begin
-  FComment := StringToTBytes(Value);
+  if self.UTF8Support then
+    E := TEncoding.UTF8
+  else
+    E := Encoding;
+  FComment := E.GetBytes(Value);
+
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
   if Length(FComment) > $FFFF then
@@ -697,7 +736,8 @@ begin
     raise EZipException.CreateRes(@SZipNoWrite);
   LFile := FFiles[Index];
 
-  LFile.FileComment := StringToTBytes(Value);
+  LFile.UTF8Support := UTF8Support;
+  LFile.FileComment := GetTextEncode(LFile).GetBytes(Value);
   if Length(LFile.FileComment) > $FFFF then
     SetLength(LFile.FileComment, $FFFF);
   LFile.FileCommentLength := Length(LFile.FileComment);
@@ -709,12 +749,6 @@ begin
   if Value = FUTF8Support then Exit;
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
-  // Resetting this flag would require re-writing all the local headers with the
-  // new strings and flag, and adjusting the offsets.
-  if FFiles.Count <> 0 then
-    raise EZipException.CreateRes(@SZipNotEmpty);
-
-                                         
   FUTF8Support := Value;
 end;
 
@@ -841,11 +875,17 @@ begin
 end;
 
 class procedure TZipFile.ExtractZipFile(const ZipFileName: string; const Path: string; ZipProgress: TZipProgressEvent);
+begin
+  ExtractZipFile(ZipFileName, Path, nil, ZipProgress);
+end;
+
+class procedure TZipFile.ExtractZipFile(const ZipFileName: string; const Path: string; const Encoding: TEncoding; ZipProgress: TZipProgressEvent);
 var
   LZip: TZipFile;
 begin
   LZip := TZipFile.Create;
   try
+    LZip.Encoding := Encoding;
     if Assigned(ZipProgress) then
       LZip.OnProgress := ZipProgress;
     LZip.Open(ZipFileName, zmRead);
@@ -858,6 +898,12 @@ end;
 
 class procedure TZipFile.ZipDirectoryContents(const ZipFileName: string; const Path: string;
   Compression: TZipCompression; ZipProgress: TZipProgressEvent);
+begin
+  ZipDirectoryContents(ZipFileName, Path, nil, Compression, ZipProgress);
+end;
+
+class procedure TZipFile.ZipDirectoryContents(const ZipFileName: string; const Path: string;
+  const Encoding: TEncoding; Compression: TZipCompression; ZipProgress: TZipProgressEvent);
 var
   LZipFile: TZipFile;
   LFile: string;
@@ -867,6 +913,7 @@ var
 begin
   LZipFile := TZipFile.Create;
   try
+    LZipFile.Encoding := Encoding;
     if Assigned(ZipProgress) then
       LZipFile.OnProgress := ZipProgress;
     if TFile.Exists(ZipFileName) then
@@ -1094,7 +1141,7 @@ begin
   FCurrentHeader := LHeader;
   try
     if not GetUTF8PathFromExtraField(LHeader, LFileName) then
-      LFileName := TBytesToString(FFiles[Index].FileName);
+      LFileName := GetTextEncode(FFiles[Index]).GetString(FFiles[Index].FileName);
 {$IFDEF MSWINDOWS} // ZIP stores files with '/', so translate to a relative Windows path.
     LFileName := StringReplace(LFileName, '/', '\', [rfReplaceAll]);
 {$ENDIF}
@@ -1186,7 +1233,6 @@ begin
       //CRC, Uncompressed, and Compressed Size follow the compressed data.
       SetLength(Bytes, 4096);
       ReadStart := 0;
-      ReadBytes := 0; // Supress warning
       while True do
       begin
         ReadBytes := LStream.Read(Bytes[ReadStart], Length(Bytes)-ReadStart);
@@ -1216,7 +1262,7 @@ begin
     raise EZipException.CreateRes(@SZipNoRead);
 
   if (Index < 0) or (Index > FFiles.Count) then
-    raise EZipException.CreateRes(@SFileNotFound);
+    raise EZipException.CreateRes(@SSpecifiedFileNotFound);
 
   // Local Header doesn't have thse fields
   LocalHeader.MadeByVersion := 0;
@@ -1266,6 +1312,9 @@ var
   LStartPos: Int64;
   LBuffer: TBytes;
 begin
+  if FFiles.Count = $FFFF then
+    raise EZipException.CreateRes(@SZipExceedNumberOfFiles);
+
   // Seek to End of zipped data
   FStream.Position := FEndFileData;
   LocalHeader.LocalHeaderOffset := FEndFileData;
@@ -1358,6 +1407,14 @@ begin
     raise EZipException.CreateRes(@SZipFileNameEmpty);
 end;
 
+function TZipFile.GetTextEncode(const Header: TZipHeader): TEncoding;
+begin
+  if Header.UTF8Support then
+    Result := TEncoding.UTF8
+  else
+    Result := Encoding;
+end;
+
 procedure TZipFile.Add(const FileName: string; const ArchiveFileName: string;
   Compression: TZipCompression);
 var
@@ -1394,12 +1451,12 @@ begin
     if Hi(LHeader.MadeByVersion) = MADEBY_UNIX then
       LHeader.ExternalAttributes := LHeader.ExternalAttributes shl 16;
     if ArchiveFileName <> '' then
-	    LArchiveFileName := ArchiveFileName
-	  else
+      LArchiveFileName := ArchiveFileName
+    else
       LArchiveFileName := ExtractFileName(FileName);
-    if FUTF8Support then
-      LHeader.Flag := LHeader.Flag or (1 shl 11); // Language encoding flag, UTF8
-    LHeader.FileName := StringToTBytes(LArchiveFileName);
+    LHeader.UTF8Support := FUTF8Support;
+    LHeader.FileName := GetTextEncode(LHeader).GetBytes(LArchiveFileName);
+
     LHeader.FileNameLength := Length(LHeader.FileName);
 
     LHeader.ExtraFieldLength := 0;
@@ -1460,9 +1517,8 @@ begin
   if Hi(LHeader.MadeByVersion) = MADEBY_UNIX then
     LHeader.ExternalAttributes := LHeader.ExternalAttributes shl 16;
 
-  if FUTF8Support then
-    LHeader.Flag := LHeader.Flag or (1 shl 11); // Language encoding flag, UTF8
-  LHeader.FileName := StringToTBytes(ArchiveFileName);
+  LHeader.UTF8Support := FUTF8Support;
+  LHeader.FileName := GetTextEncode(LHeader).GetBytes(ArchiveFileName);
   LHeader.FileNameLength := Length(LHeader.FileName);
 
   LHeader.ExtraFieldLength := 0;
@@ -1476,7 +1532,7 @@ var
 begin
   Result := -1;
   for I := 0 to FFiles.Count - 1 do
-    if SameText(TBytesToString(FFiles[I].FileName), FileName) then
+    if SameText(GetTextEncode(FFiles[I]).GetString(FFiles[I].FileName), FileName) then
       Exit(I);
 end;
 
