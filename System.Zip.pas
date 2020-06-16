@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2018 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2019 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -794,6 +794,7 @@ end;
 class destructor TZipFile.Destroy;
 begin
   FCompressionHandler.Free;
+  FCP437Encoding.Free;
 end;
 
 class procedure TZipFile.RegisterCompressionHandler(
