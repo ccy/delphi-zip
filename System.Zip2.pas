@@ -82,6 +82,7 @@ const
   EXTRAFIELD_ID_NTFS: UInt16  = $000A;
 
   ZIP64 = $FFFFFFFF;
+  C_MaxFileCount = $FFFF;
 
 type
   /// <summary> Final block written to zip file</summary>
@@ -1049,6 +1050,8 @@ var
   LEndHeader: TZipEndOfCentralHeader;
   LHeader: TZipHeader;
   Z64: TZip64_EndOfCentralDirectory;
+  LFileCount : UInt64;
+  LCentralDirOffset : Int64;
 begin
   FFiles.Clear;
   if FStream.Size = 0 then
@@ -1056,18 +1059,30 @@ begin
   // Read End Of Centeral Direcotry Header
   if not LocateEndOfCentralHeader(LEndHeader) then
     raise EZipException.CreateRes(@SZipErrorRead);
-  // Move to the beginning of the CentralDirectory
-  FStream.Position := LEndHeader.CentralDirOffset;
-  if LEndHeader.CentralDirOffset = ZIP64 then begin
+
+  // Read from End Of Central Directory Header
+  LCentralDirOffset := LEndHeader.CentralDirOffset;
+  LFileCount        := LEndHeader.CentralDirEntries;
+
+  if (LCentralDirOffset = ZIP64) OR
+     (LFileCount = C_MaxFileCount) then
+  begin
+    // On essaye de trouver le EOCD64
     if ZIP64_LocateEndOfCentralHeader(Z64) then
-      FStream.Position := Z64.DirectoryOffset;
+    begin
+      // Lecture du EOCD64
+      LCentralDirOffset := Z64.DirectoryOffset;
+      LFileCount        := Z64.EntriesOnDisk;
+    end;
   end;
+  // Move to the beginning of the CentralDirectory
+  FStream.Position := LCentralDirOffset;
   // Save Begginning of Central Directory. This is where new files
   // get written to, and where the new central directory gets written when
   // closing.
-  FEndFileData := LEndHeader.CentralDirOffset;
+  FEndFileData := LCentralDirOffset;
   // Read File Headers
-  for I := 0 to LEndHeader.CentralDirEntries - 1 do
+  for I := 0 to LFileCount - 1 do
   begin
     // Verify Central Header signature
     FStream.Read(Signature, Sizeof(Signature));
@@ -1486,7 +1501,7 @@ var
   LEndOfHeader: TZipEndOfCentralHeader;
   I: Integer;
   Signature: UInt32;
-  iCentralDirSize: UInt32;
+  iCentralDirSize: UInt64;
   Z64_End: TZip64_EndOfCentralDirectory;
   Z64_EndLocator: TZip64_EndOfCentralDirectoryLocator;
   bIsZIP64: Boolean;
@@ -1495,7 +1510,7 @@ begin
     // Only need to write Central Directory and End Of Central Directory if writing
     if (FMode = zmReadWrite) or (FMode = zmWrite) then
     begin
-      bIsZIP64 := False;
+      bIsZIP64 := (FFiles.Count > C_MaxFileCount);
       FStream.Position := FEndFileData;
       Signature := SIGNATURE_CENTRALHEADER;
       // Write File Signatures
@@ -1555,12 +1570,22 @@ begin
 
       // Only support writing single disk .ZIP files
       FillChar(LEndOfHeader, Sizeof(LEndOfHeader), 0);
-      LEndOfHeader.CentralDirEntries := FFiles.Count;
-      LEndOfHeader.NumEntriesThisDisk := FFiles.Count;
-      LEndOfHeader.CentralDirSize := iCentralDirSize;
-      LEndOfHeader.CentralDirOffset := FEndFileData;
+      if FFiles.Count > C_MaxFileCount then
+        LEndOfHeader.CentralDirEntries := C_MaxFileCount
+      else
+        LEndOfHeader.CentralDirEntries := FFiles.Count;
+      if FFiles.Count > C_MaxFileCount then
+        LEndOfHeader.NumEntriesThisDisk := C_MaxFileCount
+      else
+        LEndOfHeader.NumEntriesThisDisk := FFiles.Count;
+      IF iCentralDirSize > $FFFFFFFF then
+        LEndOfHeader.CentralDirSize := $FFFFFFFF
+      else
+        LEndOfHeader.CentralDirSize := iCentralDirSize;
       if FEndFileData > ZIP64 then
-        LEndOfHeader.CentralDirOffset := ZIP64;
+        LEndOfHeader.CentralDirOffset := ZIP64
+      else
+        LEndOfHeader.CentralDirOffset := FEndFileData;
       // Truncate comment if it's too long
       if Length(FComment) > $FFFF then
         SetLength(FComment, $FFFF);
