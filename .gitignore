@@ -1,6 +1,9 @@
+__history/
+__recovery/
 *.local
 *.res
 *.identcache
 *.dsk
 *.tvsconfig
 *.dcu
+*.~*
