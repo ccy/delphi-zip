@@ -1,8 +1,8 @@
-{*******************************************************}
+﻿{*******************************************************}
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2020 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2021 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -34,6 +34,10 @@ uses
 
 resourcestring
   SZipInvalidExtraField = 'Invalid extra field';
+{$IFNDEF RTLVersion <= 31.0}
+  SSpecifiedFileNotFound = 'The specified file was not found';
+  SZipExceedNumberOfFiles  = 'The number of files has been exceeded';
+{$ENDIF}
 
 type
   /// <summary> Zip Compression Method Enumeration </summary>
