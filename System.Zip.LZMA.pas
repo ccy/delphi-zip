@@ -6,14 +6,16 @@ uses
   System.SysUtils, System.Classes, System.Zip2, LzmaDec, LzmaEnc;
 
 type
+  PZipHeader = ^TZipHeader;
+
   TLZMAEncoderStream = class(TStream)
   private
     FStream: TStream;
     FEncoderHandle: TCLzmaEncHandle;
     FProgress: TZipProgressEvent;
-    FZipHeader: TZipHeader;
+    FZipHeader: PZipHeader;
   public
-    constructor Create(const Stream: TStream; aZipHeader: TZipHeader; const
+    constructor Create(const Stream: TStream; aZipHeader: PZipHeader; const
         aProgress: TZipProgressEvent); reintroduce;
     procedure AfterConstruction; override;
     procedure BeforeDestruction; override;
@@ -41,13 +43,14 @@ type
 
 implementation
 
-uses Winapi.Windows, LzmaTypes;
+uses System.ZLib, Winapi.Windows, LzmaTypes;
 
 type
   PLzmaEncoderRead = ^TLzmaEncoderRead;
   TLzmaEncoderRead = record
     Proc: TInStreamReadProc;
     Stream: TStream;
+    CRC32: UInt32;
   end;
 
   PzmaEncoderWrite = ^TLzmaEncoderWrite;
@@ -70,6 +73,7 @@ begin
   try
     R := PLzmaEncoderRead(p);
     size := R.Stream.Read(buf^, size);
+    R.CRC32 := crc32(R.CRC32, buf, size);
     Result := SZ_OK;
   except
     Result := SZ_ERROR_DATA;
@@ -132,7 +136,7 @@ begin
 end;
 
 constructor TLZMAEncoderStream.Create(const Stream: TStream; aZipHeader:
-    TZipHeader; const aProgress: TZipProgressEvent);
+    PZipHeader; const aProgress: TZipProgressEvent);
 begin
   inherited Create;
   FStream := Stream;
@@ -156,16 +160,18 @@ begin
   A.Init;
   R.Proc := LzmaReadProc;
   R.Stream := TStream(Buffer);
+  R.CRC32 := 0;
 
   W.Proc := LzmaWriteProc;
   W.Stream := FStream;
 
   P.Proc := LzmaProgressProc;
-  P.ZipHeader := FZipHeader;
+  P.ZipHeader := FZipHeader^;
   P.UncompressedSize := R.Stream.Size;
   P.Progress := FProgress;
 
   CheckLzma(LzmaEnc_Encode(FEncoderHandle, @W, @R, @P, A, A));
+  FZipHeader.CRC32 := R.CRC32;
   Result := Count;
 end;
 
@@ -250,7 +256,7 @@ begin
   TZipFile.RegisterCompressionHandler(zcLZMA,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TLZMAEncoderStream.Create(InStream, Item, ZipFile.OnProgress);
+      Result := TLZMAEncoderStream.Create(InStream, @Item, ZipFile.OnProgress);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin

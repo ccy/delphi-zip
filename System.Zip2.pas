@@ -1752,13 +1752,18 @@ begin
   if LCompressStream is TZCompressionStream then
     (LCompressStream as TZCompressionStream).OnProgress := DoZLibProgress;
   try
-    SetLength(LBuffer, $4000);
-    // Calculate Uncompressed data's CRC while copying Data
-    while Data.Position < LDataEnd do
-    begin
-      LReaded := Data.Read(LBuffer, Length(LBuffer));
-      LCompressStream.Write(LBuffer, LReaded);
-      LocalHeader.CRC32 := crc32(LocalHeader.CRC32, @LBuffer[0], LReaded);
+    if TZipCompression(LocalHeader.CompressionMethod) = zcLZMA then begin
+      LCompressStream.Write(Data, 0);
+      // LocalHeader.CRC32 is calculated in LCompressStream.Write
+    end else begin
+      SetLength(LBuffer, $4000);
+      // Calculate Uncompressed data's CRC while copying Data
+      while Data.Position < LDataEnd do
+      begin
+        LReaded := Data.Read(LBuffer, Length(LBuffer));
+        LCompressStream.Write(LBuffer, LReaded);
+        LocalHeader.CRC32 := crc32(LocalHeader.CRC32, @LBuffer[0], LReaded);
+      end;
     end;
     if Assigned(FOnProgress) then
       FOnProgress(Self, FCurrentFile, FCurrentHeader, LCompressStream.Position);
