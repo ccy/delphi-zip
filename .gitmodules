@@ -1,0 +1,3 @@
+[submodule "lzmasdk"]
+	path = lzmasdk
+	url = https://github.com/ccy/lzmasdk
