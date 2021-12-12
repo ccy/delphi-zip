@@ -1,0 +1,39 @@
+= Delphi Zip
+:toc:
+
+= Introduction
+
+https://docwiki.embarcadero.com/Libraries/Alexandria/en/System.Zip.TZipFile[TZipFile] class in RAD Studio does not support
+
+- https://www.7-zip.org/sdk.html[LZMA] compression method
+- Zip64 archive format
+
+This library add these features to existing `System.Zip.pas` via new unit `System.Zip2.pas`.  User can easily switch between `System.Zip.pas` and `System.Zip2.pas` in source code.
+
+= Source code
+
+The repository organizes source code for various RAD Studio release using https://github.com/ccy/delphi-zip/branches[branches] since https://github.com/ccy/delphi-zip/tree/XE4[RAD Studio XE4].
+
+== RAD Studio 11 Alexandria
+
+- https://blogs.embarcadero.com/announcing-the-availability-of-rad-studio-11-alexandria/[RAD Studio 11 Alexandria] support Zip64. `Zip64` artifacts has replaced by RAD Studio 11 release.
+
+= Usage
+
+To enable `Zip64` support, replace `System.Zip.pas` to `System.Zip2.pas`.
+
+To enable *LZMA* compression method, Add `System.Zip.LZMA` to RAD Studio project.
+
+
+= Example
+
+To extract LZMA zip archive:
+
+[source,pascal]
+----
+uses System.Zip2, System.Zip.LZMA;
+
+begin
+  TZipFile.ExtractZipFile('c:\lzma.zip', 'c:\');
+end.
+----
