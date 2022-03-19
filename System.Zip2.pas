@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2021 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2022 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -400,7 +400,7 @@ type
     /// </returns>
     function IndexOf(const FileName: string): Integer;
 
-    /// <summary> Unlike IndexOf, will raise EZipException if the file is not found</summy>
+    /// <summary> Unlike IndexOf, will raise EZipException if the file is not found</summary>
     function GetFileIndex(const FileName: string): Integer;
 
     /// <returns>FileName of a TZipHeader</returns>
@@ -989,6 +989,7 @@ begin
     if Signature <> SIGNATURE_CENTRALHEADER then
       raise EZipException.CreateRes(@SZipInvalidCentralHeader);
     // Read Central Header
+    LHeader := Default(TZipHeader);
     VerifyRead(FStream, LHeader.MadeByVersion,      Sizeof(UInt16));
     VerifyRead(FStream, LHeader.RequiredVersion,    Sizeof(UInt16));
     VerifyRead(FStream, LHeader.Flag,               Sizeof(UInt16));
@@ -1090,7 +1091,7 @@ begin
   RegisterCompressionHandler(zcDeflate,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TZCompressionStream.Create(InStream, zcDefault, -15);
+      Result := TZCompressionStreamExt.Create(InStream, zcDefault, -15);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     var
@@ -1108,7 +1109,7 @@ begin
         LStream := TZipFile.FCreateDecompressStreamCallBack(InStream, ZipFile, Item, LIsEncrypted)
       else
         LStream := InStream;
-      Result := TZDecompressionStream.Create(LStream, -15, LStream <> InStream);
+      Result := TZDecompressionStreamExt.Create(LStream, -15, LStream <> InStream);
     end);
 end;
 
