@@ -1091,7 +1091,7 @@ begin
   RegisterCompressionHandler(zcDeflate,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TZCompressionStreamExt.Create(InStream, zcDefault, -15);
+      Result := {$IF COMPILERVERSION >= 34}TZCompressionStreamExt.Create(InStream, zcDefault, -15){$ELSE}TZCompressionStream.Create(InStream, zcDefault, -15){$ENDIF};
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     var
@@ -1109,7 +1109,7 @@ begin
         LStream := TZipFile.FCreateDecompressStreamCallBack(InStream, ZipFile, Item, LIsEncrypted)
       else
         LStream := InStream;
-      Result := TZDecompressionStreamExt.Create(LStream, -15, LStream <> InStream);
+      Result := {$IF COMPILERVERSION >= 34}TZDecompressionStreamExt.Create(LStream, -15, LStream <> InStream){$ELSE}TZDecompressionStream.Create(LStream, -15, LStream <> InStream){$ENDIF};
     end);
 end;
 
