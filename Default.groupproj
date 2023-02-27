@@ -1,0 +1,60 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{053C7C7B-7814-4B7A-889F-FFF260F30C54}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="ZipTest.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="lzmasdk\Delphi\LzmaSDK.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Zip.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="ZipTest">
+        <MSBuild Projects="ZipTest.dproj"/>
+    </Target>
+    <Target Name="ZipTest:Clean">
+        <MSBuild Projects="ZipTest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="ZipTest:Make">
+        <MSBuild Projects="ZipTest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="LzmaSDK">
+        <MSBuild Projects="lzmasdk\Delphi\LzmaSDK.dproj"/>
+    </Target>
+    <Target Name="LzmaSDK:Clean">
+        <MSBuild Projects="lzmasdk\Delphi\LzmaSDK.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="LzmaSDK:Make">
+        <MSBuild Projects="lzmasdk\Delphi\LzmaSDK.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Zip">
+        <MSBuild Projects="Zip.dproj"/>
+    </Target>
+    <Target Name="Zip:Clean">
+        <MSBuild Projects="Zip.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="Zip:Make">
+        <MSBuild Projects="Zip.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="ZipTest;LzmaSDK;Zip"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="ZipTest:Clean;LzmaSDK:Clean;Zip:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="ZipTest:Make;LzmaSDK:Make;Zip:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>
