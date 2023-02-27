@@ -267,7 +267,7 @@ end;
 
 procedure UnregisterLZMA;
 begin
-  TZipFile.UnregisterCompressionHandler(zcLZMA);
+  TZipFile.RegisterCompressionHandler(zcLZMA, nil, nil);
 end;
 
 initialization

@@ -20,7 +20,7 @@
 { Are implemented in this unit.                         }
 {*******************************************************}
 
-                        
+
 
 unit System.Zip2;
 
@@ -254,7 +254,6 @@ type
     class procedure RegisterCompressionHandler(Compression: TZipCompression;
       const CompressStream, DecompressStream: TStreamConstructor);
 
-    class procedure UnregisterCompressionHandler(Compression: TZipCompression);
     /// <param name="ZipFileName">Path to Zip File</param>
     /// <returns>Is the .ZIP file valid</returns>
     class function IsValid(const ZipFileName: string): Boolean; overload; static;
@@ -446,6 +445,9 @@ uses
   System.ZLib,
   System.Types;
 
+const
+  MaxCommentLength = $FFFF;
+
 function DateTimeToWinFileDate(DateTime: TDateTime): UInt32;
 var
   Year, Month, Day, Hour, Min, Sec, MSec: Word;
@@ -530,62 +532,6 @@ procedure VerifyWrite(Stream: TStream; Buffer: UInt32; Count: Integer); overload
 begin
   if Stream.Write(Buffer, Count) <> Count then
     raise EZipException.CreateRes(@SZipErrorWrite) at ReturnAddress;
-end;
-
-type
-  /// <summary> Helper class for reading a segment of another stream.</summary>
-  TStoredStream = class(TStream)
-  private
-    FStream: TStream;
-    FPos: Int64;
-  protected
-    function GetSize: Int64; override;
-  public
-    constructor Create(Stream: TStream);
-
-    function Read(var Buffer; Count: Longint): Longint; overload; override;
-    function Write(const Buffer; Count: Longint): Longint; overload; override;
-    function Read(Buffer: TBytes; Offset, Count: Longint): Longint; overload; override;
-    function Write(const Buffer: TBytes; Offset, Count: Longint): Longint; overload; override;
-    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
-  end;
-
-{ TStoredStream }
-
-constructor TStoredStream.Create(Stream: TStream);
-begin
-  FStream := Stream;
-  FPos := FStream.Position;
-end;
-
-function TStoredStream.GetSize: Int64;
-begin
-  Result := FStream.Size;
-end;
-
-function TStoredStream.Read(var Buffer; Count: Longint): Longint;
-begin
-  Result := FStream.Read(Buffer, Count);
-end;
-
-function TStoredStream.Read(Buffer: TBytes; Offset, Count: Longint): Longint;
-begin
-  Result := FStream.Read(Buffer, Offset, Count);
-end;
-
-function TStoredStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
-begin
-  Result := FStream.Seek(Offset, Origin)
-end;
-
-function TStoredStream.Write(const Buffer; Count: Longint): Longint;
-begin
-  Result := FStream.Write(Buffer, Count);
-end;
-
-function TStoredStream.Write(const Buffer: TBytes; Offset, Count: Longint): Longint;
-begin
-  Result := FStream.Write(Buffer, Offset, Count);
 end;
 
 function TZipCompressionToString(Compression: TZipCompression): string;
@@ -1040,8 +986,8 @@ begin
 
   if not (FMode in [zmReadWrite, zmWrite]) then
     raise EZipException.CreateRes(@SZipNoWrite);
-  if Length(FComment) > $FFFF then
-    SetLength(FComment, $FFFF);
+  if Length(FComment) > MaxCommentLength then
+    SetLength(FComment, MaxCommentLength);
 end;
 
 procedure TZipFile.SetFileComment(Index: Integer; Value: string);
@@ -1054,8 +1000,8 @@ begin
 
   LFile.UTF8Support := UTF8Support;
   LFile.FileComment := GetTextEncode(LFile).GetBytes(Value);
-  if Length(LFile.FileComment) > $FFFF then
-    SetLength(LFile.FileComment, $FFFF);
+  if Length(LFile.FileComment) > MaxCommentLength then
+    SetLength(LFile.FileComment, MaxCommentLength);
   LFile.FileCommentLength := Length(LFile.FileComment);
   FFiles[Index] := LFile;
 end;
@@ -1068,12 +1014,6 @@ begin
   FUTF8Support := Value;
 end;
 
-class procedure TZipFile.UnregisterCompressionHandler(
-  Compression: TZipCompression);
-begin
-  FCompressionHandler.Remove(Compression);
-end;
-
 class constructor TZipFile.Create;
 begin
   FCompressionHandler := TCompressionDict.Create;
@@ -1081,11 +1021,11 @@ begin
   RegisterCompressionHandler(zcStored,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TStoredStream.Create(InStream);
+      Result := TProxySubrangeStream.Create(InStream, -1, -1);
     end,
     function(InStream: TStream; const ZipFile: TZipFile; const Item: TZipHeader): TStream
     begin
-      Result := TStoredStream.Create(InStream);
+      Result := TProxySubrangeStream.Create(InStream, InStream.Position, Item.UncompressedSize64);
     end);
 
   RegisterCompressionHandler(zcDeflate,
@@ -1160,29 +1100,34 @@ end;
 function TZipFile.LocateEndOfCentralHeader(var Header: TZipEndOfCentralHeader): Boolean;
 var
   I: Integer;
-  LBackRead, LReadSize, LMaxBack: UInt32;
+  LBackRead, LReadSize, LMaxBack, L: UInt32;
   LBackBuf: TBytes;
+  LLastPosition: Int64;
 begin
-  if FStream.Size < $FFFF then
-    LMaxBack := FStream.Size
-  else
-    LMaxBack := $FFFF;
-  LBackRead := 4;
-  SetLength(LBackBuf, $404 - 1);
-  while LBackRead < LMaxBack do
+  L := SizeOf(TZipEndOfCentralHeader) + SizeOf(UInt32);
+  LMaxBack := MaxCommentLength + L;
+  if FStream.Size < LMaxBack then
+    LMaxBack := FStream.Size;
+  LBackRead := L;
+  SetLength(LBackBuf, 50 * L);
+  LLastPosition := Low(Int64);
+  while LBackRead <= LMaxBack do
   begin
-    if LBackRead + Cardinal(Length(LBackBuf) - 4) > LMaxBack then
+    if LBackRead + UInt32(Length(LBackBuf)) - L > LMaxBack then
       LBackRead := LMaxBack
     else
-      Inc(LBackRead, Length(LBackBuf) -4);
+      Inc(LBackRead, UInt32(Length(LBackBuf)) - L);
     FStream.Position := FStream.Size - LBackRead;
+    if FStream.Position = LLastPosition then
+      Break;
+    LLastPosition := FStream.Position;
     if Length(LBackBuf) < (FStream.Size - FStream.Position) then
       LReadSize := Length(LBackBuf)
     else
       LReadSize := FStream.Size - FStream.Position;
     VerifyRead(FStream, LBackBuf, LReadSize);
 
-    for I := LReadSize - 4 downto 0 do
+    for I := LReadSize - L downto 0 do
     begin
       if (LBackBuf[I]   = ((SIGNATURE_ZIPENDOFHEADER       ) and $FF)) and
          (LBackBuf[I+1] = ((SIGNATURE_ZIPENDOFHEADER shr  8) and $FF)) and
@@ -1462,8 +1407,8 @@ begin
         LEndOfHeader.CentralDirOffset := FEndFileData;
       end;
       // Truncate comment if it's too long
-      if Length(FComment) > $FFFF then
-        SetLength(FComment, $FFFF);
+      if Length(FComment) > MaxCommentLength then
+        SetLength(FComment, MaxCommentLength);
       LEndofHeader.CommentLength := Length(FComment);
       // Write End Of Centeral Directory
       Signature := SIGNATURE_ZIPENDOFHEADER;
@@ -1507,6 +1452,8 @@ var
   LCount: Integer;
   LSize: Int64;
   LCRC: Cardinal;
+  LAttrs: TFileAttributes;
+  LLinkTarget: string;
 begin
   // Get decompression stream for file
   Read(Index, LInStream, LHeader);
@@ -1529,38 +1476,81 @@ begin
     // Open the File For output
     if LFileName.Chars[LFileName.Length-1] = PathDelim then
       Exit; // Central Directory Entry points at a directory, not a file.
-    LOutStream := TFileStream.Create(LFileName, fmCreate);
-    try // And Copy from the decompression stream.
+
+{$IFDEF MSWINDOWS}
+    if (Hi(FFiles[Index].MadeByVersion) = MADEBY_MSDOS) then
+      LAttrs := TFile.IntegerToFileAttributes(FFiles[Index].ExternalAttributes and $000000FF)
+    else
+      LAttrs := [];
+{$ENDIF}
+{$IFDEF POSIX}
+    if (Hi(FFiles[Index].MadeByVersion) = MADEBY_UNIX) and (FFiles[Index].ExternalAttributes shr 16 <> 0) then
+      LAttrs := TFile.IntegerToFileAttributes(FFiles[Index].ExternalAttributes shr 16)
+    else
+      LAttrs := [];
+{$ENDIF}
+
+    if TFileAttribute.faSymLink in LAttrs then
+    begin
       FCurrentFile := LFileName;
-      LCRC := crc32(0, nil, 0);
-      LSize := FFiles[Index].UncompressedSize64;
-      if LSize > 0 then
-      begin
-        if LSize < DEFAULT_BUFFER_SIZE then
-          LLen := LSize
-        else
-          LLen := DEFAULT_BUFFER_SIZE;
-        SetLength(LBuffer, LLen);
-        repeat
+      try
+        LLen := FFiles[Index].UncompressedSize64;
+        if LLen > 0 then
+        begin
+          SetLength(LBuffer, LLen);
           LCount := LInStream.Read(LBuffer, LLen);
           if LCount <> LLen then
             raise EZipException.CreateRes(@SZipErrorRead);
-          LOutStream.Write(LBuffer, LCount);
+          LCRC := crc32(0, nil, 0);
           LCRC := crc32(LCRC, PByte(LBuffer), LCount);
-          Dec(LSize, LLen);
-          if LSize < LLen then
-            LLen := LSize;
-        until LLen = 0;
+          if LCRC <> FFiles[Index].CRC32 then
+            raise EZipCRCException.CreateRes(@SZipErrorRead);
+          LLinkTarget := TEncoding.UTF8.GetString(LBuffer);
+          TFile.CreateSymLink(LFileName, LLinkTarget);
+        end;
+        if Assigned(FOnProgress) then
+          FOnProgress(Self, FCurrentFile, FCurrentHeader, LLen);
+      finally
+        FCurrentFile := '';
       end;
-      if LCRC <> FFiles[Index].CRC32 then
-        raise EZipCRCException.CreateRes(@SZipErrorRead);
-      if Assigned(FOnProgress) then
-        FOnProgress(Self, FCurrentFile, FCurrentHeader, LOutStream.Position);
-    finally
-      LOutStream.Free;
-      FCurrentFile := '';
+    end
+
+    else
+    begin
+      LOutStream := TFileStream.Create(LFileName, fmCreate);
+      try // And Copy from the decompression stream.
+        FCurrentFile := LFileName;
+        LCRC := crc32(0, nil, 0);
+        LSize := FFiles[Index].UncompressedSize64;
+        if LSize > 0 then
+        begin
+          if LSize < DEFAULT_BUFFER_SIZE then
+            LLen := LSize
+          else
+            LLen := DEFAULT_BUFFER_SIZE;
+          SetLength(LBuffer, LLen);
+          repeat
+            LCount := LInStream.Read(LBuffer, LLen);
+            if LCount <> LLen then
+              raise EZipException.CreateRes(@SZipErrorRead);
+            LOutStream.Write(LBuffer, LCount);
+            LCRC := crc32(LCRC, PByte(LBuffer), LCount);
+            Dec(LSize, LLen);
+            if LSize < LLen then
+              LLen := LSize;
+          until LLen = 0;
+        end;
+        if LCRC <> FFiles[Index].CRC32 then
+          raise EZipCRCException.CreateRes(@SZipErrorRead);
+        if Assigned(FOnProgress) then
+          FOnProgress(Self, FCurrentFile, FCurrentHeader, LOutStream.Position);
+      finally
+        LOutStream.Free;
+        FCurrentFile := '';
+      end;
     end;
-    if FileExists(LFileName) then
+
+    if not (TFileAttribute.faSymLink in LAttrs) and FileExists(LFileName, False) then
     begin
       if WinFileDateToDateTime(LHeader.ModifiedDateTime, LModifiedDateTime) then
       begin
@@ -1569,11 +1559,11 @@ begin
       end;
 {$IFDEF MSWINDOWS}
       if (Hi(FFiles[Index].MadeByVersion) = MADEBY_MSDOS) then
-        TFile.SetAttributes(LFileName, TFile.IntegerToFileAttributes(FFiles[Index].ExternalAttributes and $000000FF));
+        TFile.SetAttributes(LFileName, LAttrs);
 {$ENDIF}
 {$IFDEF POSIX}
       if (Hi(FFiles[Index].MadeByVersion) = MADEBY_UNIX) and (FFiles[Index].ExternalAttributes shr 16 <> 0) then
-        TFile.SetAttributes(LFileName, TFile.IntegerToFileAttributes(FFiles[Index].ExternalAttributes shr 16));
+        TFile.SetAttributes(LFileName, LAttrs);
 {$ENDIF}
     end;
   finally
@@ -1642,6 +1632,7 @@ end;
 procedure TZipFile.Read(Index: Integer; out Stream: TStream; out LocalHeader: TZipHeader);
 var
   Signature: UInt32;
+  StreamCons: TStreamConstructor;
 begin
   if not (FMode in [zmReadWrite, zmRead]) then
     raise EZipException.CreateRes(@SZipNoRead);
@@ -1684,7 +1675,11 @@ begin
     FStream.Read(LocalHeader.ExtraField, LocalHeader.ExtraFieldLength);
   end;
   // Create Decompression stream.
-  Stream := FCompressionHandler[TZipCompression(FFiles[Index].CompressionMethod)].Value(FStream, Self, LocalHeader);
+  StreamCons := FCompressionHandler[TZipCompression(FFiles.List[Index].CompressionMethod)].Value;
+  if LocalHeader.Flag and (1 shl 3) <> 0 then
+    Stream := StreamCons(FStream, Self, FFiles.List[Index])
+  else
+    Stream := StreamCons(FStream, Self, LocalHeader);
   if Stream is TZDecompressionStream then
   begin
     FCurrentHeader := LocalHeader;

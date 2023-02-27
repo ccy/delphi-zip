@@ -29,7 +29,7 @@ type
 
 implementation
 
-uses Classes, System.SysUtils, System.IOUtils, System.Zip.LZMA;
+uses System.Classes, System.SysUtils, System.IOUtils, System.Zip.LZMA;
 
 procedure TTestCase_Zip.TestCase_Zip_File;
 var fZip, fData: string;
