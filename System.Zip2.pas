@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2022 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2023 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -667,6 +667,60 @@ end;
 const
   EFSFLAG = 1 shl 11; // Language encoding flag (EFS)
 
+                                                                                         
+function Get64ExtraHeaderField(const Self: TZipHeader; const Header: TZip64ExtraHeader;
+  Size, Field: Integer): UInt64;
+
+  procedure Error;
+  begin
+    raise EZipException.CreateRes(@SZipErrorRead) at ReturnAddress;
+  end;
+
+var
+  P: PByte;
+begin
+  with Self do
+  begin
+    P := @Header;
+    if UncompressedSize = $FFFFFFFF then
+    begin
+      if Size < SizeOf(UInt64) then Error;
+      if Field = 0 then Exit(PUInt64(P)^);
+      Inc(P, SizeOf(UInt64));
+      Dec(Size, SizeOf(UInt64));
+    end
+    else
+      if Field = 0 then Exit(UncompressedSize);
+    if CompressedSize = $FFFFFFFF then
+    begin
+      if Size < SizeOf(UInt64) then Error;
+      if Field = 1 then Exit(PUInt64(P)^);
+      Inc(P, SizeOf(UInt64));
+      Dec(Size, SizeOf(UInt64));
+    end
+    else
+      if Field = 1 then Exit(CompressedSize);
+    if LocalHeaderOffset = $FFFFFFFF then
+    begin
+      if Size < SizeOf(UInt64) then Error;
+      if Field = 2 then Exit(PUInt64(P)^);
+      Inc(P, SizeOf(UInt64));
+      Dec(Size, SizeOf(UInt64));
+    end
+    else
+      if Field = 2 then Exit(LocalHeaderOffset);
+    if DiskNumberStart = $FFFF then
+    begin
+      if Size < SizeOf(UInt32) then Error;
+      if Field = 3 then Exit(PUInt32(P)^);
+    end
+    else
+      if Field = 3 then Exit(DiskNumberStart);
+    Error;
+    Result := 0;
+  end;
+end;
+
 function TZipHeader.GetUTF8Support: Boolean;
 begin
   Result := Flag and EFSFLAG = EFSFLAG; // Language encoding flag, UTF8
@@ -686,10 +740,7 @@ var
   Size: Integer;
 begin
   Size := GetExtraField(ExtraField, ZIP64_EXTRAHEADER, SizeOf(Extra), @Extra);
-  if Size < 8 then
-    Result := UncompressedSize
-  else
-    Result := Extra.UncompressedSize;
+  Result := Get64ExtraHeaderField(Self, Extra, Size, 0);
 end;
 
 procedure TZipHeader.SetUncompressedSize64(Value: UInt64);
@@ -717,7 +768,10 @@ begin
     Size := 0;
   end;
   if (Size <> 0) or (ExtraField <> nil) then
+  begin
     SetExtraField(ExtraField, ZIP64_EXTRAHEADER, Size, @Extra);
+    ExtraFieldLength := Length(ExtraField);
+  end;
   if Size = 0 then
     RequiredVersion := 20;
 end;
@@ -728,10 +782,7 @@ var
   Size: Integer;
 begin
   Size := GetExtraField(ExtraField, ZIP64_EXTRAHEADER, SizeOf(Extra), @Extra);
-  if Size < 2 * 8 then
-    Result := CompressedSize
-  else
-    Result := Extra.CompressedSize;
+  Result := Get64ExtraHeaderField(Self, Extra, Size, 1);
 end;
 
 procedure TZipHeader.SetCompressedSize64(Value: UInt64);
@@ -752,7 +803,10 @@ begin
     CompressedSize := Value;
   end;
   if (Size > 0) or (ExtraField <> nil) then
+  begin
     SetExtraField(ExtraField, ZIP64_EXTRAHEADER, Size, @Extra);
+    ExtraFieldLength := Length(ExtraField);
+  end;
 end;
 
 function TZipHeader.GetLocalHeaderOffset64: UInt64;
@@ -761,10 +815,7 @@ var
   Size: Integer;
 begin
   Size := GetExtraField(ExtraField, ZIP64_EXTRAHEADER, SizeOf(Extra), @Extra);
-  if Size < 3 * 8 then
-    Result := LocalHeaderOffset
-  else
-    Result := Extra.LocalHeaderOffset;
+  Result := Get64ExtraHeaderField(Self, Extra, Size, 2);
 end;
 
 procedure TZipHeader.SetLocalHeaderOffset64(Value: UInt64);
@@ -795,7 +846,10 @@ begin
       Size := 2 * 8;
   end;
   if (Size > 0) or (ExtraField <> nil) then
+  begin
     SetExtraField(ExtraField, ZIP64_EXTRAHEADER, Size, @Extra);
+    ExtraFieldLength := Length(ExtraField);
+  end;
   if Size = 0 then
     RequiredVersion := 20;
 end;
@@ -1638,7 +1692,7 @@ begin
     raise EZipException.CreateRes(@SZipNoRead);
 
   if (Index < 0) or (Index >= FFiles.Count) then
-    raise EZipException.CreateResFmt(@sArgumentOutOfRange_Index, [Index, FFiles.Count]);
+    raise EZipException.CreateResFmt(@SListIndexErrorExt, [Index, FFiles.Count - 1, ClassName]);
 
   // Local Header doesn't have thse fields
   LocalHeader.MadeByVersion := 0;
