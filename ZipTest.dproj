@@ -7,7 +7,7 @@
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Console</AppType>
         <FrameworkType>None</FrameworkType>
-        <ProjectVersion>19.5</ProjectVersion>
+        <ProjectVersion>20.1</ProjectVersion>
         <Platform Condition="'$(Platform)'==''">Win32</Platform>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
@@ -112,6 +112,8 @@
         <DCC_BplOutput>.\$(Platform)\$(Config)</DCC_BplOutput>
         <DCC_DcuOutput>.\$(Platform)\$(Config)</DCC_DcuOutput>
         <DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>
+        <DCC_UnitSearchPath>delphi-detours-library\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_Namespace>System;$(DCC_Namespace)</DCC_Namespace>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Android)'!=''">
         <VerInfo_Keys>package=com.embarcadero.$(MSBuildProjectName);label=$(MSBuildProjectName);versionCode=1;versionName=1.0.0;persistent=False;restoreAnyVersion=False;installLocation=auto;largeHeap=False;theme=TitleBar;hardwareAccelerated=true;apiKey=</VerInfo_Keys>
@@ -184,6 +186,7 @@
         <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
         <DCC_RangeChecking>true</DCC_RangeChecking>
         <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
+        <DCC_DebugDCUs>true</DCC_DebugDCUs>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Android64)'!=''">
         <BT_BuildType>Debug</BT_BuildType>
@@ -209,12 +212,13 @@
         </DelphiCompile>
         <DCCReference Include="lzmasdk\Delphi\Threads.pas"/>
         <DCCReference Include="lzmasdk\Delphi\LzmaTypes.pas"/>
+        <DCCReference Include="lzmasdk\Delphi\CPUArch.pas"/>
         <DCCReference Include="lzmasdk\Delphi\LzFind.pas"/>
         <DCCReference Include="lzmasdk\Delphi\LzFindMt.pas"/>
         <DCCReference Include="lzmasdk\Delphi\LzmaDec.pas"/>
         <DCCReference Include="lzmasdk\Delphi\LzmaEnc.pas"/>
-        <DCCReference Include="System.Zip2.pas"/>
         <DCCReference Include="System.Zip.LZMA.pas"/>
+        <DCCReference Include="System.Zip.Patch.LZMA.pas"/>
         <DCCReference Include="System.Zip.TestCase.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
@@ -236,13 +240,7 @@
                 <Source>
                     <Source Name="MainSource">ZipTest.dpr</Source>
                 </Source>
-                <Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\bcboffice2k280.bpl">Embarcadero C++Builder Office 2000 Servers Package</Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\bcbofficexp280.bpl">Embarcadero C++Builder Office XP Servers Package</Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\dcloffice2k280.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
-                    <Excluded_Packages Name="$(BDSBIN)\dclofficexp280.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
-                    <Excluded_Packages Name="V:\sdk\radstudio-components\bin-35\win32\release\dclDragDropD11.bpl">File V:\sdk\radstudio-components\bin-35\win32\release\dclDragDropD11.bpl not found</Excluded_Packages>
-                </Excluded_Packages>
+                <Excluded_Packages/>
             </Delphi.Personality>
             <Platforms>
                 <Platform value="Android">False</Platform>

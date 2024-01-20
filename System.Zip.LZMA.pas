@@ -3,7 +3,7 @@ unit System.Zip.LZMA;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Zip2, LzmaDec, LzmaEnc;
+  System.SysUtils, System.Classes, System.Zip, LzmaDec, LzmaEnc;
 
 type
   PZipHeader = ^TZipHeader;
@@ -13,6 +13,7 @@ type
     FStream: TStream;
     FEncoderHandle: TCLzmaEncHandle;
     FProgress: TZipProgressEvent;
+    FTotalIn: Int64;
     FZipHeader: PZipHeader;
   public
     constructor Create(const Stream: TStream; aZipHeader: PZipHeader; const
@@ -28,17 +29,17 @@ type
     FCurrentDataLen: UInt32;
     FData: TBytes;
     FDataLen: UInt32;
-    FLzmaState: TCLzmaDec;
-    FStream: TStream;
-    FProgress: TZipProgressEvent;
-    FZipHeader: TZipHeader;
     FDecompressSize: Int64;
+    FLzmaState: TCLzmaDec;
+    FProgress: TZipProgressEvent;
+    FStream: TStream;
+    FZipHeader: TZipHeader;
   public
     constructor Create(const Stream: TStream; aZipHeader: TZipHeader; const
         aProgress: TZipProgressEvent); reintroduce;
     procedure AfterConstruction; override;
     procedure BeforeDestruction; override;
-    function Read(Buffer: TBytes; Offset, Count: Longint): Longint; override;
+    function Read(var Buffer; Count: Longint): Longint; override;
   end;
 
 implementation
@@ -69,10 +70,10 @@ type
 
 function LzmaReadProc(p: PISeqInStream; buf: PByte; var size: SIZE_T): TSRes; cdecl;
 var R: PLzmaEncoderRead;
-begin
+ begin
   try
     R := PLzmaEncoderRead(p);
-    size := R.Stream.Read(buf^, size);
+    size := R.Stream.Read(buf^, size{R.Stream.Size});
     R.CRC32 := crc32(R.CRC32, buf, size);
     Result := SZ_OK;
   except
@@ -142,13 +143,27 @@ begin
   FStream := Stream;
   FZipHeader := aZipHeader;
   FProgress := aProgress;
+  FTotalIn := 0;
 end;
 
-function TLZMAEncoderStream.Seek(const Offset: Int64;
-  Origin: TSeekOrigin): Int64;
+function TLZMAEncoderStream.Seek(const Offset: Int64; Origin: TSeekOrigin):
+    Int64;
+
+  procedure Error;
+  begin
+    raise EZCompressionError.Create(SZInvalid);
+  end;
+
 begin
-  if (Offset = 0) and (Origin = soCurrent) then
-    Result := FZipHeader.UncompressedSize;
+  case Origin of
+    soBeginning:
+      if FTotalIn <> Offset then
+        Error;
+    soCurrent, soEnd:
+      if Offset <> 0 then
+        Error;
+  end;
+  result := FTotalIn;
 end;
 
 function TLZMAEncoderStream.Write(const Buffer; Count: Longint): Longint;
@@ -173,6 +188,8 @@ begin
   CheckLzma(LzmaEnc_Encode(FEncoderHandle, @W, @R, @P, A, A));
   FZipHeader.CRC32 := R.CRC32;
   Result := Count;
+
+  Inc(FTotalIn, R.Stream.Size);
 end;
 
 constructor TLZMADecoderStream.Create(const Stream: TStream; aZipHeader:
@@ -221,8 +238,7 @@ begin
   inherited;
 end;
 
-function TLZMADecoderStream.Read(Buffer: TBytes; Offset, Count: Longint):
-    Longint;
+function TLZMADecoderStream.Read(var Buffer; Count: Longint): Longint;
 var Status: ELzmaStatus;
     OutLen, InLen: SIZE_T;
     BufferPos: LongInt;
@@ -237,7 +253,7 @@ begin
     OutLen := Count - BufferPos;
     InLen := FCurrentDataLen;
 
-    CheckLzma(LzmaDec_DecodeToBuf(FLzmaState, Buffer[BufferPos], OutLen, FData[FDataLen - FCurrentDataLen], InLen, LZMA_FINISH_ANY, Status));
+    CheckLzma(LzmaDec_DecodeToBuf(FLzmaState, TBytes(@Buffer)[BufferPos], OutLen, FData[FDataLen - FCurrentDataLen], InLen, LZMA_FINISH_ANY, Status));
 
     Dec(FCurrentDataLen, InLen);
 
@@ -267,7 +283,7 @@ end;
 
 procedure UnregisterLZMA;
 begin
-  TZipFile.RegisterCompressionHandler(zcLZMA, nil, nil);
+  TZipFile.UnRegisterCompressionHandler(zcLZMA);
 end;
 
 initialization

@@ -26,15 +26,17 @@ package Zip;
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
 {$DESCRIPTION 'Zip - revised implementation of Delphi System.Zip.pas'}
+{$LIBSUFFIX AUTO}
 {$RUNONLY}
 {$IMPLICITBUILD OFF}
 
 requires
   rtl,
-  LzmaSDK;
+  LzmaSDK,
+  Detours;
 
 contains
-  System.Zip2 in 'System.Zip2.pas',
-  System.Zip.LZMA in 'System.Zip.LZMA.pas';
+  System.Zip.LZMA in 'System.Zip.LZMA.pas',
+  System.Zip.Patch.LZMA in 'System.Zip.Patch.LZMA.pas';
 
 end.

@@ -2,7 +2,7 @@ unit System.Zip.TestCase;
 
 interface
 
-uses TestFramework, System.Zip2;
+uses TestFramework, System.Zip;
 
 type
   TTestCase_Zip = class(TTestCase)

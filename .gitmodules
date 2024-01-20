@@ -1,3 +1,6 @@
 [submodule "lzmasdk"]
 	path = lzmasdk
 	url = https://github.com/ccy/lzmasdk
+[submodule "delphi-detours-library"]
+	path = delphi-detours-library
+	url = https://github.com/ccy/delphi-detours-library

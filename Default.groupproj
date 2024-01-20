@@ -3,6 +3,9 @@
         <ProjectGuid>{053C7C7B-7814-4B7A-889F-FFF260F30C54}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
+        <Projects Include="delphi-detours-library\Package\Detours.dproj">
+            <Dependencies/>
+        </Projects>
         <Projects Include="ZipTest.dproj">
             <Dependencies/>
         </Projects>
@@ -20,6 +23,15 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
+    <Target Name="Detours">
+        <MSBuild Projects="delphi-detours-library\Package\Detours.dproj"/>
+    </Target>
+    <Target Name="Detours:Clean">
+        <MSBuild Projects="delphi-detours-library\Package\Detours.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="Detours:Make">
+        <MSBuild Projects="delphi-detours-library\Package\Detours.dproj" Targets="Make"/>
+    </Target>
     <Target Name="ZipTest">
         <MSBuild Projects="ZipTest.dproj"/>
     </Target>
@@ -48,13 +60,13 @@
         <MSBuild Projects="Zip.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="ZipTest;LzmaSDK;Zip"/>
+        <CallTarget Targets="Detours;ZipTest;LzmaSDK;Zip"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="ZipTest:Clean;LzmaSDK:Clean;Zip:Clean"/>
+        <CallTarget Targets="Detours:Clean;ZipTest:Clean;LzmaSDK:Clean;Zip:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="ZipTest:Make;LzmaSDK:Make;Zip:Make"/>
+        <CallTarget Targets="Detours:Make;ZipTest:Make;LzmaSDK:Make;Zip:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>
