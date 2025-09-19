@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2024 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2025 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
