@@ -412,10 +412,10 @@ type
     procedure Add(Data: TStream; LocalHeader: TZipHeader; CentralHeader: PZipHeader = nil); overload;
     /// <summary> Add a directory to the ZIP file </summary>
     /// <param name="DirName">DirName to be added.
-    ///   If Specified, it existance will be checked.</param>
-    ///   If Ommitted, <C>ArchiveDirName</C> will be used.</param>
+    ///   If Specified, it existance will be checked.
+    ///   If Ommitted, ArchiveDirName will be used.</param>
     /// <param name="ArchiveDirName">Path + Name of directory in the archive.
-    ///   If Ommitted, <C>ExtractFileName(DirName)</C> will be used.</param>
+    ///   If Ommitted, ExtractFileName(DirName) will be used.</param>
     procedure AddDirectory(const DirName: string; const ArchiveDirName: string = '');
 
     /// <summary>Remove a file from the ZIP file</summary>
