@@ -2,7 +2,7 @@
 {                                                       }
 {           CodeGear Delphi Runtime Library             }
 {                                                       }
-{ Copyright(c) 1995-2023 Embarcadero Technologies, Inc. }
+{ Copyright(c) 1995-2024 Embarcadero Technologies, Inc. }
 {              All rights reserved                      }
 {                                                       }
 {   Copyright and license exceptions noted in source    }
@@ -17,7 +17,7 @@
 {for more information on the .ZIP File Format.          }
 {                                                       }
 { Support for Compression modes 0(store) and 8(deflate) }
-{ Are implemented in this unit.                         }
+{ are implemented in this unit.                         }
 {*******************************************************}
 
 unit System.Zip;
@@ -1094,7 +1094,12 @@ begin
   if not LocateEndOfCentralHeader(LEndHeader) then
     raise EZipException.CreateRes(@SZipErrorRead);
   // ZIP64 End Of Central Directory Header
-  if LEndHeader.CentralDirOffset = ZIP64_MAXINT then
+  if (LEndHeader.DiskNumber = $FFFF) or
+     (LEndHeader.CentralDirStartDisk = $FFFF) or
+     (LEndHeader.NumEntriesThisDisk = $FFFF) or
+     (LEndHeader.CentralDirEntries = $FFFF) or
+     (LEndHeader.CentralDirSize = ZIP64_MAXINT) or
+     (LEndHeader.CentralDirOffset = ZIP64_MAXINT) then
   begin
     VerifyRead(FStream, LEndHeader64.Signature, SizeOf(LEndHeader64));
     if LEndHeader64.Signature <> SIGNATURE_ZIP64ENDOFHEADER then
@@ -1141,7 +1146,7 @@ begin
       SetLength(LHeader.FileComment, LHeader.FileCommentLength);
       VerifyRead(FStream, LHeader.FileComment, LHeader.FileCommentLength);
     end;
-    // Save File Header in interal list
+    // Save File Header in internal list
     FFiles[I - 1] := LHeader;
   end;
 end;
@@ -1358,7 +1363,12 @@ begin
         end
         else
           SetLength(FComment, 0);
-        if Header.CentralDirOffset = ZIP64_MAXINT then
+        if (Header.DiskNumber = $FFFF) or
+           (Header.CentralDirStartDisk = $FFFF) or
+           (Header.NumEntriesThisDisk = $FFFF) or
+           (Header.CentralDirEntries = $FFFF) or
+           (Header.CentralDirSize = ZIP64_MAXINT) or
+           (Header.CentralDirOffset = ZIP64_MAXINT) then
         begin
           FStream.Position := FStream.Size - LBackRead + I - SizeOf(TZip64EndOfCentralHeader);
         end;
@@ -1645,7 +1655,7 @@ begin
   FCurrentHeader := LHeader;
   try
     if not GetUTF8PathFromExtraField(LHeader, LFileName) then
-      LFileName := GetTextEncode(FFiles[Index]).GetString(FFiles[Index].FileName);
+      LFileName := InternalGetFileName(Index);
 {$IFDEF MSWINDOWS} // ZIP stores files with '/', so translate to a relative Windows path.
     LFileName := StringReplace(LFileName, '/', '\', [rfReplaceAll]);
 {$ENDIF}
@@ -1654,6 +1664,7 @@ begin
       LFileName := TPath.Combine(Path, LFileName)
     else
       LFileName := TPath.Combine(Path, ExtractFileName(LFileName));
+    FCurrentFile := LFileName;
     // Force directory creation
     LDir := ExtractFileDir(LFileName);
     if CreateSubdirs and (LDir <> '') then
@@ -1688,21 +1699,16 @@ begin
 
     else if TFileAttribute.faSymLink in LAttrs then
     begin
-      FCurrentFile := LFileName;
-      try
-        LLen := FFiles[Index].UncompressedSize64;
-        if LLen > 0 then
-        begin
-          SetLength(LBuffer, LLen);
-          VerifyRead(LInStream, LBuffer, LLen);
-          LLinkTarget := TEncoding.UTF8.GetString(LBuffer);
-          TFile.CreateSymLink(LFileName, LLinkTarget);
-        end;
-        if Assigned(FOnProgress) then
-          FOnProgress(Self, FCurrentFile, FCurrentHeader, LLen);
-      finally
-        FCurrentFile := '';
+      LLen := FFiles[Index].UncompressedSize64;
+      if LLen > 0 then
+      begin
+        SetLength(LBuffer, LLen);
+        VerifyRead(LInStream, LBuffer, LLen);
+        LLinkTarget := TEncoding.UTF8.GetString(LBuffer);
+        TFile.CreateSymLink(LFileName, LLinkTarget);
       end;
+      if Assigned(FOnProgress) then
+        FOnProgress(Self, FCurrentFile, FCurrentHeader, LLen);
     end
 
     else
@@ -1716,7 +1722,6 @@ begin
           FOnProgress(Self, FCurrentFile, FCurrentHeader, LOutStream.Position);
       finally
         LOutStream.Free;
-        FCurrentFile := '';
       end;
 
       if FileExists(LFileName, False) then
@@ -1738,6 +1743,7 @@ begin
     end;
 
   finally
+    FCurrentFile := '';
     FCurrentHeader := Default(TZipHeader);
     LInStream.Free;
   end;
@@ -1851,6 +1857,7 @@ begin
   if Stream is TZDecompressionStream then
   begin
     FCurrentHeader := LocalHeader;
+    FCurrentFile := InternalGetFileName(Index);
     TZDecompressionStream(Stream).OnProgress := DoZLibProgress;
   end;
 
@@ -2199,31 +2206,36 @@ begin
 
   // Setup Header
   FillChar(LHeader, sizeof(LHeader), 0);
-  {$IFDEF MSWINDOWS}
-  LHeader.MadeByVersion := Word(MADEBY_MSDOS shl 8);
-  {$ENDIF}
-  {$IFDEF POSIX}
-  LHeader.MadeByVersion := Word(MADEBY_UNIX shl 8);
-  {$ENDIF}
-  LHeader.CompressionMethod := UInt16(Compression);
-  LHeader.ModifiedTime := Now;
-  LHeader.FileAttributes := AExternalAttributes;
+  FCurrentFile := ArchiveFileName;
+  try
+    {$IFDEF MSWINDOWS}
+    LHeader.MadeByVersion := Word(MADEBY_MSDOS shl 8);
+    {$ENDIF}
+    {$IFDEF POSIX}
+    LHeader.MadeByVersion := Word(MADEBY_UNIX shl 8);
+    {$ENDIF}
+    LHeader.CompressionMethod := UInt16(Compression);
+    LHeader.ModifiedTime := Now;
+    LHeader.FileAttributes := AExternalAttributes;
 
-  LHeader.UTF8Support := FUTF8Support;
-  LHeader.FileName := GetTextEncode(LHeader).GetBytes(ArchiveFileName);
-  LHeader.FileNameLength := Length(LHeader.FileName);
+    LHeader.UTF8Support := FUTF8Support;
+    LHeader.FileName := GetTextEncode(LHeader).GetBytes(ArchiveFileName);
+    LHeader.FileNameLength := Length(LHeader.FileName);
 
-  Add(Data, LHeader);
+    Add(Data, LHeader);
+  finally
+    FCurrentFile := '';
+  end;
 end;
 
 function TZipFile.IndexOf(const FileName: string): Integer;
 var
   I: Integer;
 begin
-  Result := -1;
   for I := 0 to Length(FFiles) - 1 do
-    if SameText(GetTextEncode(FFiles[I]).GetString(FFiles[I].FileName), FileName) then
+    if SameText(InternalGetFileName(I), FileName) then
       Exit(I);
+  Result := -1;
 end;
 
 function TZipFile.GetFileIndex(const FileName: string): Integer;
